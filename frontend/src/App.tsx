@@ -3,29 +3,74 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, ShieldCheck, Gamepad2, Laptop, GraduationCap, ChevronRight } from 'lucide-react'
 import { MissionCamera } from './views/MissionCamera'
 import { ResultView } from './views/ResultView'
+import { ParentDashboard } from './views/ParentDashboard'
+import { NFCUnlock } from './views/NFCUnlock'
 import type { AnalysisResult } from './lib/gemini'
+
+interface HistoryItem {
+  id: string;
+  timestamp: Date;
+  data: AnalysisResult;
+  status: 'pending' | 'approved' | 'rejected';
+}
 
 function App() {
   const [role, setRole] = useState<'parent' | 'child' | null>(null)
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [beforeImg, setBeforeImg] = useState<File | null>(null)
   const [afterImg, setAfterImg] = useState<File | null>(null)
+  const [history, setHistory] = useState<HistoryItem[]>([])
+  const [showNFC, setShowNFC] = useState(false)
+  const [gameTime, setGameTime] = useState(0)
 
   const handleAnalysisComplete = (res: AnalysisResult, before: File, after: File) => {
     setResult(res)
     setBeforeImg(before)
     setAfterImg(after)
+
+    // Add to history as pending
+    const newItem: HistoryItem = {
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: new Date(),
+      data: res,
+      status: 'pending'
+    }
+    setHistory(prev => [newItem, ...prev])
+  }
+
+  const handleApprove = (id: string) => {
+    setHistory(prev => prev.map(item =>
+      item.id === id ? { ...item, status: 'approved' as const } : item
+    ))
+  }
+
+  const handleReject = (id: string) => {
+    setHistory(prev => prev.map(item =>
+      item.id === id ? { ...item, status: 'rejected' as const } : item
+    ))
   }
 
   const resetFlow = () => {
     setResult(null)
     setBeforeImg(null)
     setAfterImg(null)
-    // Keep role selected or reset? Let's keep role for smoother UX
   }
 
   const handleBackToRoleSelect = () => {
     setRole(null)
+    resetFlow()
+  }
+
+  const handleReceiveReward = () => {
+    setShowNFC(true)
+  }
+
+  const handleNFCComplete = () => {
+    setShowNFC(false)
+    // Add bonus time based on score (simplified)
+    if (result) {
+      setGameTime(prev => prev + 30 + (result.total_score > 80 ? 15 : 0))
+    }
     resetFlow()
   }
 
@@ -38,7 +83,7 @@ function App() {
           result={result}
           beforeImg={beforeImg}
           afterImg={afterImg}
-          onReset={resetFlow}
+          onReset={handleReceiveReward}
         />
       )
     }
@@ -53,20 +98,15 @@ function App() {
       )
     }
 
-    // 3. Parent Mode: Placeholder
+    // 3. Parent Mode
     if (role === 'parent') {
       return (
-        <div className="text-center mt-20">
-          <ShieldCheck size={48} className="mx-auto text-indigo-400 mb-4" />
-          <h2 className="text-2xl font-bold mb-2">管理者ダッシュボード</h2>
-          <p className="text-slate-400 mb-6">MVP版では子供用モードのみ実装されています。</p>
-          <button
-            onClick={() => setRole(null)}
-            className="text-sm underline text-indigo-400"
-          >
-            戻る
-          </button>
-        </div>
+        <ParentDashboard
+          results={history}
+          onApprove={handleApprove}
+          onReject={handleReject}
+          onBack={handleBackToRoleSelect}
+        />
       )
     }
 
@@ -81,7 +121,11 @@ function App() {
         >
           <div className="inline-flex items-center gap-2 mb-4 px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-indigo-400 text-sm font-medium">
             <Sparkles size={14} />
-            <span>AI-Powered Learning Management</span>
+            {gameTime > 0 ? (
+              <span>残りゲーム時間: <span className="text-white font-bold">{gameTime}分</span></span>
+            ) : (
+              <span>AI-Powered Learning Management</span>
+            )}
           </div>
           <h1 className="text-5xl md:text-6xl font-bold mb-4 tracking-tight">
             SmartStudy <span className="text-gradient">Gate</span>
@@ -121,9 +165,13 @@ function App() {
             className={`glass-card cursor-pointer group transition-all`}
           >
             <div className="flex items-start justify-between mb-4">
-              <div className={`p-3 rounded-xl bg-purple-500/20 text-purple-400`}>
+              <motion.div
+                animate={{ y: [0, -5, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                className={`p-3 rounded-xl bg-purple-500/20 text-purple-400`}
+              >
                 <Gamepad2 size={32} />
-              </div>
+              </motion.div>
             </div>
             <h3 className="text-2xl font-bold mb-2">挑戦者 (子供)</h3>
             <p className="text-color-text-muted mb-4">
@@ -156,8 +204,17 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Background decorations could be here */}
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden bg-slate-950 text-slate-100 font-sans">
+      <div className="bg-mesh">
+        <div className="orb orb-1" />
+        <div className="orb orb-2" />
+        <div className="orb orb-3" />
+      </div>
+
+      <AnimatePresence>
+        {showNFC && <NFCUnlock onComplete={handleNFCComplete} />}
+      </AnimatePresence>
+
       <AnimatePresence mode="wait">
         <motion.div
           key={role ? role + (result ? '-result' : '') : 'hero'}

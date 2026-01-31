@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import type { AnalysisResult } from '../lib/gemini';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { CheckCircle2, AlertCircle, Quote, Star, Award } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Quote, Star, Award, PenTool, Eraser, FileText, Search } from 'lucide-react';
 
 interface ResultViewProps {
     result: AnalysisResult;
@@ -11,7 +11,15 @@ interface ResultViewProps {
     onReset: () => void;
 }
 
-export function ResultView({ result, onReset }: ResultViewProps) {
+export function ResultView({ result, beforeImg, afterImg, onReset }: ResultViewProps) {
+
+    const getFeatureIcon = (type: string) => {
+        const t = type.toLowerCase();
+        if (t.includes('pen') || t.includes('赤')) return <PenTool size={20} />;
+        if (t.includes('erase') || t.includes('消し')) return <Eraser size={20} />;
+        if (t.includes('process') || t.includes('途中')) return <FileText size={20} />;
+        return <CheckCircle2 size={20} />;
+    };
 
     // Calculate star rating (0-5) from total score (0-100)
     const stars = Math.round(result.total_score / 20);
@@ -27,10 +35,14 @@ export function ResultView({ result, onReset }: ResultViewProps) {
                 >
                     <div className="inline-block relative">
                         <div className="absolute inset-0 bg-indigo-500 blur-3xl opacity-20 rounded-full" />
-                        <h1 className="text-7xl font-bold bg-gradient-to-b from-white to-indigo-300 bg-clip-text text-transparent relative z-10">
+                        <motion.h1
+                            initial={{ y: 20, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            className="text-8xl font-black bg-gradient-to-b from-white via-white to-indigo-400 bg-clip-text text-transparent relative z-10 tracking-tighter"
+                        >
                             {result.total_score}
-                            <span className="text-2xl text-indigo-300 ml-1">pts</span>
-                        </h1>
+                            <span className="text-3xl font-bold text-indigo-400/80 ml-1">pts</span>
+                        </motion.h1>
                     </div>
 
                     <div className="flex justify-center gap-1 mt-2 text-yellow-400">
@@ -59,6 +71,18 @@ export function ResultView({ result, onReset }: ResultViewProps) {
                 </div>
             </Card>
 
+            {/* Image Comparison Preview */}
+            <div className="grid grid-cols-2 gap-3 mb-8">
+                <div className="relative rounded-xl overflow-hidden border border-white/5 bg-slate-900 aspect-video">
+                    <img src={URL.createObjectURL(beforeImg)} alt="Before" className="w-full h-full object-cover opacity-60" />
+                    <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded text-[10px] font-mono uppercase tracking-widest text-white/70 border border-white/10">Before</div>
+                </div>
+                <div className="relative rounded-xl overflow-hidden border border-white/5 bg-slate-900 aspect-video">
+                    <img src={URL.createObjectURL(afterImg)} alt="After" className="w-full h-full object-cover" />
+                    <div className="absolute top-2 left-2 px-2 py-0.5 bg-indigo-500/80 rounded text-[10px] font-mono uppercase tracking-widest text-white border border-indigo-400/50">After</div>
+                </div>
+            </div>
+
             {/* Score Breakdown Grid */}
             <div className="grid grid-cols-2 gap-4 mb-6">
                 <ScoreCard label="作業量" score={result.score_breakdown.volume} icon="📚" delay={0.1} />
@@ -68,10 +92,13 @@ export function ResultView({ result, onReset }: ResultViewProps) {
             </div>
 
             {/* Good Points (Features) */}
-            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <Award className="text-yellow-400" />
-                <span>ここがすごい！ (Good Points)</span>
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                    <Award className="text-yellow-400" />
+                    <span>ここがすごい！</span>
+                </h3>
+                <div className="h-[1px] flex-1 bg-white/5 ml-4" />
+            </div>
             <div className="space-y-3 mb-8">
                 {result.features.map((feature, i) => (
                     <motion.div
@@ -80,13 +107,22 @@ export function ResultView({ result, onReset }: ResultViewProps) {
                         animate={{ x: 0, opacity: 1 }}
                         transition={{ delay: 0.5 + (i * 0.1) }}
                     >
-                        <Card className="py-4 flex items-start gap-3 border-green-500/20 bg-green-900/10">
-                            <CheckCircle2 className="text-green-400 shrink-0 mt-1" size={20} />
+                        <Card className="py-4 flex items-start gap-3 border-emerald-500/20 bg-emerald-900/10 hover:bg-emerald-900/20 transition-colors">
+                            <div className="text-emerald-400 shrink-0 mt-1">
+                                {getFeatureIcon(feature.type)}
+                            </div>
                             <div>
-                                <span className="text-xs font-bold text-green-400 bg-green-900/30 px-2 py-0.5 rounded uppercase tracking-wider">
-                                    {feature.type}
-                                </span>
-                                <p className="text-sm mt-1 text-slate-200">{feature.description}</p>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-900/40 px-1.5 py-0.5 rounded uppercase tracking-wider border border-emerald-500/20">
+                                        {feature.type}
+                                    </span>
+                                    {feature.location && (
+                                        <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                            <Search size={10} /> {feature.location}
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-sm mt-1.5 text-slate-200 leading-relaxed">{feature.description}</p>
                             </div>
                         </Card>
                     </motion.div>
@@ -116,7 +152,10 @@ export function ResultView({ result, onReset }: ResultViewProps) {
                 <Button variant="outline" fullWidth onClick={onReset}>
                     閉じる
                 </Button>
-                <Button fullWidth onClick={() => alert("MVP Demo: Game unlocked!")}>
+                <Button fullWidth onClick={() => {
+                    alert("MVP Demo: 報酬が確定しました！ゲーム時間が付与されます 🎁");
+                    onReset();
+                }}>
                     報酬を受け取る 🎁
                 </Button>
             </div>

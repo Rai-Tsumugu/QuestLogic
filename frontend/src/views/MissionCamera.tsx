@@ -20,6 +20,7 @@ export function MissionCamera({ onAnalysisComplete, onBack }: MissionCameraProps
     const [beforeImage, setBeforeImage] = useState<File | null>(null);
     const [afterImage, setAfterImage] = useState<File | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [analysisStage, setAnalysisStage] = useState<string>("画像をアップロード中...");
 
     const beforeInputRef = useRef<HTMLInputElement>(null);
     const afterInputRef = useRef<HTMLInputElement>(null);
@@ -62,18 +63,35 @@ export function MissionCamera({ onAnalysisComplete, onBack }: MissionCameraProps
         setStep('analyzing');
         setError(null);
 
+        const stages = [
+            "画像をスキャン中...",
+            "学習前の状態と比較中...",
+            "努力の痕跡を解析中...",
+            "AIコーチが評価を作成中..."
+        ];
+
+        let stageIndex = 0;
+        const stageInterval = setInterval(() => {
+            if (stageIndex < stages.length - 1) {
+                stageIndex++;
+                setAnalysisStage(stages[stageIndex]);
+            }
+        }, 1500);
+
         try {
-            // Direct API call for MVP
             const result = await analyzeHomework(beforeImage, afterImage);
 
-            // Simulate a bit more delay for dramatic effect if API is too fast
+            clearInterval(stageInterval);
+            setAnalysisStage("完了！レポートを表示します...");
+
             setTimeout(() => {
                 onAnalysisComplete(result, beforeImage, afterImage);
-            }, 1000);
+            }, 800);
 
         } catch (err) {
+            clearInterval(stageInterval);
             console.error(err);
-            setError("AI分析に失敗しました。もう一度試すか、画像の形式を確認してください。");
+            setError("AI分析に失敗しました。時間をおいて再度お試しください。");
             setStep('review');
         }
     };
@@ -141,7 +159,7 @@ export function MissionCamera({ onAnalysisComplete, onBack }: MissionCameraProps
     return (
         <div className="max-w-2xl mx-auto w-full relative min-h-[80vh] flex flex-col">
             <AnimatePresence>
-                {step === 'analyzing' && <LoadingOverlay message="AIが努力の痕跡を探しています..." />}
+                {step === 'analyzing' && <LoadingOverlay message={analysisStage} />}
             </AnimatePresence>
 
             <div className="flex items-center mb-6">
