@@ -16,7 +16,7 @@ if not API_KEY:
 
 client = genai.Client(api_key=API_KEY)
 
-# モデルの選定 (Phase 1 設計書に基づき gemini-2.0-flash)
+# モデルの選定
 MODEL_NAME = "gemini-3-flash-preview" 
 
 def analyze_homework(before_image_path, after_image_path, metadata):
