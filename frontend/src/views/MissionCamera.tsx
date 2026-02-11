@@ -150,6 +150,7 @@ export function MissionCamera({ onAnalysisComplete, onBack }: MissionCameraProps
                     ref={inputRef}
                     className="hidden"
                     accept="image/*"
+                    capture="environment"
                     onChange={(e) => handleFileSelect(e, type)}
                 />
             </Card>
