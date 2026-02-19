@@ -149,11 +149,42 @@
 
 ---
 
-## 7. API インターフェース (Cloud Functions)
+## 7. API インターフェース (Cloud Functions & Backend)
 
-| Endpoint | Method | Description | Access |
-| :--- | :--- | :--- | :--- |
-| `/api/family/child` | POST | 新しい子アカウントを作成する。 | Parent |
-| `/api/analyze` | POST | クエストのAI解析をトリガーする。 | Auth User |
-| `/api/quest/approve` | POST | 親がクエスト結果を承認する。 | Parent |
-| `/api/quest/reject` | POST | 親がクエスト結果を却下する。 | Parent |
+本システムは、クライアント(App)とバックエンド(Firebase)の通信において、以下のAPIおよびトリガーを使用します。
+
+### 7.1 ユーザー管理 (User Management)
+| Method | Endpoint | Description | Access | Payload / Note |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/user/parent/signup` | (Trigger) 親アカウント作成時、初期データ(Family, User)を生成。 | System | Auth Trigger (onCreate) |
+| `POST` | `/api/family/child` | 新しい子アカウントを作成し、Familyに追加する。 | Parent | `{ displayName: string }` -> `{ pin: string }` |
+| `POST` | `/api/auth/child/login` | PINコードを用いて子として認証する(またはそのためのToken発行)。 | Public | `{ familyId: string, pin: string }` |
+| `GET` | `/api/family/members` | 家族メンバー一覧を取得する。 | Auth User | - |
+
+### 7.2 学習・クエスト (Quest & Learning)
+| Method | Endpoint | Description | Access | Payload / Note |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/quest/start` | クエストを開始し、Before画像を登録する。 | Child | `{ subject: string, beforeImageUrl: string }` |
+| `POST` | `/api/quest/finish` | クエストを完了し、After画像を登録。AI解析をリクエストする。 | Child | `{ questId: string, afterImageUrl: string, duration: number }` |
+| `GET` | `/api/quest/list` | クエスト履歴を取得する(フィルタリング可)。 | Auth User | `?childId=...&date=...` |
+| `GET` | `/api/quest/:id` | クエストの詳細情報を取得する。 | Auth User | - |
+
+### 7.3 AI解析 (AI Analysis)
+| Method | Endpoint | Description | Access | Payload / Note |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/analyze` | (Internal/Admin) Gemini APIを用いた画像解析を実行する。 | System | 通常は `/api/quest/finish` から非同期または同期で呼び出される。 |
+
+### 7.4 親の承認・管理 (Parent Review)
+| Method | Endpoint | Description | Access | Payload / Note |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/quest/approve` | クエスト結果を承認し、エネルギー確定とボーナス付与を行う。 | Parent | `{ questId: string, stampId?: string, comment?: string }` |
+| `POST` | `/api/quest/reject` | クエスト結果を却下し、やり直しを指示する。 | Parent | `{ questId: string, reason: string }` |
+| `POST` | `/api/quest/correct` | 親がスコアや評価を手動で修正する。 | Parent | `{ questId: string, correctScore: number }` |
+
+### 7.5 ゲーミフィケーション・IoT (Gamification & Device)
+| Method | Endpoint | Description | Access | Payload / Note |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/api/energy/balance` | 現在のエネルギー残高を取得する。 | Child/Parent | - |
+| `POST` | `/api/device/unlock` | Smart-Gate Boxの解錠をリクエストし、エネルギー消費を開始する。 | Child | `{ deviceId: string }` |
+| `POST` | `/api/device/lock` | Smart-Gate Boxの施錠を確認し、エネルギー消費を停止する。 | Child | `{ deviceId: string }` |
+| `POST` | `/api/device/status` | デバイスの状態(Open/Close)を同期する。 | Device | IoTデバイスからのHeartbeat等 |
