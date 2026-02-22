@@ -122,7 +122,8 @@
     {
       "questId": "quest_999",
       "afterImageUrl": "gs://bucket/path/to/after.jpg",
-      "durationMin": 30
+      "durationMin": 30,
+      "childComment": "図形が難しかった" // Optional: 子供が任意に入力した感想
     }
     ```
 *   **Response Body**:
@@ -149,6 +150,7 @@
         "after": "https://..."
       },
       "durationMin": 30,
+      "childComment": "図形が難しかった", // Optional
       "aiResult": { // 解析完了後のみ
         "score": 85,
         "feedback_child": "すごい！図を書いて考えているね！",
@@ -175,6 +177,29 @@
         { "id": "quest_998", "subject": "English", "score": 90, "createdAt": "..." }
       ],
       "nextCursor": "..."
+    }
+    ```
+
+### 2.5 家族設定の更新 (Update Family Settings)
+*   **Endpoint**: `POST /api/family/settings`
+*   **Access**: Parent
+*   **Request Body**:
+    ```json
+    {
+      "familyId": "family_001",
+      "rewardRatio": {
+        "ai": 2,
+        "parent": 1
+      }
+    }
+    ```
+*   **Response Body**:
+    ```json
+    {
+      "success": true,
+      "settings": {
+        "rewardRatio": { "ai": 2, "parent": 1 }
+      }
     }
     ```
 

@@ -39,6 +39,7 @@
 | `id` | String | Family ID (Primary Key) |
 | `parentUid` | String | 親ユーザーの UID |
 | `childUids` | Array<String> | 子ユーザーの UID リスト |
+| `rewardRatio`| Map | AIと親の報酬配分比率 (例: `{ ai: 2, parent: 1 }`) |
 | `inviteCode` | String | 他の保護者や子供を招待するためのオプションコード |
 
 ### 2.3 認証フロー
@@ -65,6 +66,7 @@
 | `finishedAt` | Timestamp | 終了時刻 (After撮影時) |
 | `durationMin` | Number | 計算された学習時間 (分) |
 | `images` | Map | `{ before: path, after: path }` |
+| `childComment`| String | 子供の感想 (任意入力) |
 | `aiResult` | Map | AI生データ (`{ score, breakdown, feedback, tags }`) |
 | `finalScore` | Number | 確定スコア (初期値は aiResult.score と同じ) |
 | `status` | String | `"pending_review"`(確認待), `"approved"`(承認済), `"rejected"`(却下) |
@@ -121,6 +123,13 @@
 
 ### 5.2 エネルギー計算 (ゲーミフィケーション)
 `CalculatedEnergy (計算獲得エネルギー) = BaseTime (基本時間) + BonusTime (ボーナス時間)`
+
+※子供による感想入力機能があるが、感想記述の有無は獲得エネルギー計算には影響しない。
+
+*   **Reward Distribution (報酬の配分)**:
+    *   計算された獲得エネルギーは、AI解析完了時と親の承認時に分割して子供に付与される。
+    *   デフォルトの配分比率は **AI : 親 = 2 : 1** (例: 獲得エネルギーが30分の場合、AIが即座に20分を付与し、親が承認時に残り10分を付与する)。
+    *   この比率は親が Family 設定 (`rewardRatio`) で変更可能。
 
 *   **BaseTime**: `DurationMin (学習時間) * QualityMultiplier (品質係数)`
     *   スコア 100-80: x1.0

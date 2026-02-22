@@ -8,15 +8,16 @@
 
 ### 1. 通知 (Real-time Notification)
 *   **Event**: 子供がクエスト完了（After撮影 & AI分析終了）時。
-*   **Message**: 「健太くんが数学のクエストを完了しました！ AI評価: 85点（丁寧ボーナスあり）」
-*   **Payload**: `{ questId, childId, score, aiSummary }`
+*   **Message**: 「健太くんが数学のクエストを完了しました！ AI評価: 85点（丁寧ボーナスあり）」「（感想: 難しかった！）」
+*   **Payload**: `{ questId, childId, score, aiSummary, childComment }`
 *   **Direct Action**: 通知から直接「承認」や「スタンプ送信」ができる（OS機能活用）と望ましい。
 
 ### 2. クエスト詳細・承認画面 (Approval View)
 *   **Before/After Slider**:
     *   スライダーバーを左右に動かすことで、Before画像とAfter画像をワイプ比較できるUI。
     *   「どれだけ書いたか」が一目瞭然になる。
-*   **AI Report Card**:
+*   **Child's Voice & AI Report**:
+    *   **感想**: 子供が入力した感想文を表示。
     *   **Score**: 大きく表示 (e.g. "85 Good!")
     *   **Highlights**: AIが検出した「褒めポイント」を箇条書き。
         *   ✅ 計算ミスを修正しています
@@ -30,6 +31,11 @@
 ### 3. ダッシュボード (Home)
 *   **Child Status**: 「現在: 遊び中（残り15分）」のようにリアルタイムステータスを表示。
 *   **Today's Log**: 今日の学習時間合計、獲得エネルギー合計。
+
+### 4. 設定 (Settings)
+*   **Reward Ratio (報酬配分比率)**:
+    *   獲得したエネルギーを「AI解析直後」と「親承認時」のどちらのタイミングで、どの割合で付与するかを設定可能。
+    *   デフォルトは `AI : 親 = 2 : 1`。
 
 ## 受け入れ条件 (Acceptance Criteria)
 1.  通知を受け取り、タップすると詳細画面が開くこと。

@@ -18,6 +18,7 @@ AI分析結果および各クエスト（学習セッション）の結果を永
 | `finishedAt` | Timestamp | 終了時刻 (After撮影時) |
 | `durationMin` | Number | 学習時間(分) |
 | `images` | Map | `{ before: storagePath, after: storagePath }` |
+| `childComment`| String | 学習後の子供の感想 (任意入力) |
 | `aiResult` | Map | `{ score, breakdown, feedback..., tags }` (AI生データ) |
 | `finalScore` | Number | 親の承認後の確定スコア (初期値はaiResult.score) |
 | `status` | String | `"pending_review"`(親確認待) \| `"approved"` \| `"rejected"` |
