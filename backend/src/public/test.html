@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuestLogic - 統合テストポータル</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; background: #f3f4f6; padding: 20px; color: #333; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1, h2 { color: #4f46e5; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; }
+        .card { background: #f9fafb; padding: 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e5e7eb; }
+        button { background: #4f46e5; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-right: 8px; }
+        button:hover { background: #4338ca; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .btn-parent { background: #10b981; }
+        .btn-parent:hover { background: #059669; }
+        input[type="file"], input[type="number"], input[type="text"] { margin-top: 8px; margin-bottom: 16px; display: block; padding: 8px; width: 100%; max-width: 300px; border: 1px solid #ccc; border-radius: 4px; }
+        pre { background: #1f2937; color: #10b981; padding: 16px; border-radius: 8px; overflow-x: auto; max-height: 400px; white-space: pre-wrap; }
+        .flex { display: flex; gap: 20px; }
+        .badge { background: #10b981; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 QuestLogic 統合テストポータル</h1>
+        
+        <div class="card">
+            <h2>1. 認証 (Auth) - 役割切り替え</h2>
+            <button onclick="devLogin('child')">👦 子供としてログイン</button>
+            <button onclick="devLogin('parent')" class="btn-parent">👨‍👩‍👦 親としてログイン</button>
+            <p>現在の状態: <span id="authStatus" style="color:red; font-weight:bold;">未ログイン</span></p>
+            <p>現在のポイント(ゲーム時間): <span id="pointsDisplay" class="badge">0 分</span></p>
+        </div>
+
+        <div class="flex">
+            <div class="card" style="flex: 1;">
+                <h2>2. クエスト提出 (子供専用)</h2>
+                <form id="questForm">
+                    <input type="file" id="beforeImage" accept="image/*" required>
+                    <input type="file" id="afterImage" accept="image/*" required>
+                    <button type="submit" id="submitBtn" disabled>AI分析開始</button>
+                </form>
+            </div>
+
+            <div class="card" style="flex: 1;">
+                <h2>3. アクション</h2>
+                <label>対象クエストID:</label>
+                <input type="text" id="questId" placeholder="提出後に自動入力">
+                
+                <button onclick="addBonus()" id="bonusBtn" class="btn-parent" disabled>🎁 親のボーナス付与 (+10分)</button>
+                <hr style="margin: 16px 0;">
+                
+                <label>消費する時間 (分):</label>
+                <input type="number" id="consumeAmount" value="15">
+                <button onclick="consumePoints()" id="consumeBtn" disabled style="background:#ef4444;">🎮 ロック解除 (ポイント消費)</button>
+            </div>
+        </div>
+
+        <h2>実行ログ / レスポンス</h2>
+        <pre id="output">システム準備完了...</pre>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://localhost:3000/api';
+        let jwtToken = '';
+        let currentUser = null;
+        let currentRole = '';
+
+        function log(message, data = null) {
+            const time = new Date().toLocaleTimeString();
+            let text = `[${time}] ${message}\n`;
+            if (data) text += JSON.stringify(data, null, 2) + '\n';
+            document.getElementById('output').textContent = text + "------------------------\n" + document.getElementById('output').textContent;
+        }
+
+        // ログイン処理
+        async function devLogin(role) {
+            try {
+                const res = await fetch(`${BASE_URL}/test/login/${role}`);
+                const data = await res.json();
+                
+                if (data.success) {
+                    jwtToken = data.token;
+                    currentUser = data.user;
+                    currentRole = role;
+                    
+                    document.getElementById('authStatus').textContent = `ログイン成功: ${currentUser.name} (${currentUser.role})`;
+                    document.getElementById('authStatus').style.color = 'green';
+                    document.getElementById('pointsDisplay').textContent = `${currentUser.currentPoints} 分`;
+                    
+                    // 役割に応じてボタンを有効/無効化
+                    document.getElementById('submitBtn').disabled = (role !== 'child');
+                    document.getElementById('consumeBtn').disabled = (role !== 'child');
+                    document.getElementById('bonusBtn').disabled = (role !== 'parent');
+                    
+                    log(`[${currentUser.role}] としてログインしました。`, data.user);
+                }
+            } catch (err) {
+                log("ログインエラー", err.message);
+            }
+        }
+
+        // クエスト提出
+        document.getElementById('questForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            if (currentRole !== 'child') return alert("子供アカウントでログインしてください。");
+
+            const formData = new FormData();
+            formData.append('beforeImage', document.getElementById('beforeImage').files[0]);
+            formData.append('afterImage', document.getElementById('afterImage').files[0]);
+            formData.append('childId', currentUser.id);
+            formData.append('familyId', currentUser.familyId);
+
+            document.getElementById('submitBtn').textContent = "AI分析中...";
+            document.getElementById('submitBtn').disabled = true;
+
+            try {
+                const res = await fetch(`${BASE_URL}/quests/submit`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${jwtToken}` },
+                    body: formData
+                });
+                const data = await res.json();
+                log("AI分析完了", data);
+
+                if (data.success) {
+                    document.getElementById('questId').value = data.data.id;
+                    devLogin('child'); // ウォレット最新化
+                }
+            } catch (err) {
+                log("エラー", err.message);
+            } finally {
+                document.getElementById('submitBtn').textContent = "AI分析開始";
+                document.getElementById('submitBtn').disabled = false;
+            }
+        });
+
+        // ボーナス付与
+        async function addBonus() {
+            if (currentRole !== 'parent') return alert("親アカウントでログインしてください。");
+            const questId = document.getElementById('questId').value;
+            
+            try {
+                const res = await fetch(`${BASE_URL}/quests/${questId}/bonus`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${jwtToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bonusPoints: 10 })
+                });
+                const data = await res.json();
+                log("ボーナス付与結果", data);
+            } catch (err) { log("エラー", err.message); }
+        }
+
+        // ポイント消費
+        async function consumePoints() {
+            if (currentRole !== 'child') return alert("子供アカウントでログインしてください。");
+            const minutes = document.getElementById('consumeAmount').value;
+            
+            try {
+                const res = await fetch(`${BASE_URL}/users/consume-points`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${jwtToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ minutes: Number(minutes) })
+                });
+                const data = await res.json();
+                log("ポイント消費結果", data);
+                if(data.success) devLogin('child');
+            } catch (err) { log("エラー", err.message); }
+        }
+    </script>
+</body>
+</html>

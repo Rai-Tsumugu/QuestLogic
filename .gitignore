@@ -9,3 +9,11 @@ Thumbs.db
 .idea/
 
 business_ModelAndConcept.md
+
+node_modules
+
+.env
+
+backend/src/generated/prisma/*
+backend/src/prisma/*
+uploads/
