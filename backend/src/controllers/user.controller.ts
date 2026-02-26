@@ -87,3 +87,34 @@ export const consumePoints = async (req: Request, res: Response) => {
         return res.status(500).json({ error: '処理に失敗しました。' });
     }
 };
+
+/**
+ * プロフィール更新API (会員登録後の詳細設定など)
+ * @route PUT /api/users/profile
+ */
+export const updateProfile = async (req: Request, res: Response) => {
+    try {
+        const userId = req.user.userId;
+        const { name, grade, specialty, avatarUrl } = req.body;
+
+        const updatedUser = await prisma.user.update({
+            where: { id: userId },
+            data: {
+                // 値が存在する場合のみ更新する（undefinedの場合は無視）
+                ...(name && { name }),
+                ...(grade && { grade }),
+                ...(specialty && { specialty }),
+                ...(avatarUrl && { avatarUrl }),
+            }
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: 'プロフィールを更新しました。',
+            data: updatedUser
+        });
+    } catch (error) {
+        console.error('プロフィール更新エラー:', error);
+        return res.status(500).json({ error: 'プロフィールの更新に失敗しました。' });
+    }
+};

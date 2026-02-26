@@ -13,6 +13,7 @@ import path from 'path';
 import fs from 'fs';
 import { prisma } from '../app';
 import { analyzeHomeworkImages } from '../services/gemini.service';
+import { calculateLevelUp } from '../utils/level.util';
 
 // ------------------------------------------------------------------
 // 画像アップロードの設定 (Multer)
@@ -82,10 +83,20 @@ export const submitQuest = async (req: Request, res: Response) => {
             { subject, topic, parentFocus }
         );
 
-        // 3. AIによる基本報酬の計算 (最大40分)
-        const aiBaseMinutes = Math.floor((aiResult.total_score / 100) * 40);
+        // 3. 報酬計算 (ポイント と 経験値)
+        const totalScore = aiResult.total_score;
+        const aiBaseMinutes = Math.floor((totalScore / 100) * 40);
 
-        // 4. トランザクションでクエストの更新とユーザーウォレットの加算を同時に行う
+        // 子供の現在のレベル情報を取得
+        const childUser = await prisma.user.findUnique({ where: { id: childId } });
+        if (!childUser) {
+            return res.status(404).json({ error: 'ユーザーが見つかりません。' });
+        }
+
+        // レベルアップ計算 (AIスコアをそのまま経験値として付与)
+        const { newLevel, newExp, isLevelUp } = calculateLevelUp(childUser.level, childUser.exp, totalScore);
+
+        // 4. トランザクション処理 (クエスト更新 + ユーザーのウォレット・レベル更新)
         await prisma.$transaction([
             prisma.quest.update({
                 where: { id: quest.id },
@@ -99,7 +110,9 @@ export const submitQuest = async (req: Request, res: Response) => {
             prisma.user.update({
                 where: { id: childId },
                 data: {
-                    currentPoints: { increment: aiBaseMinutes }
+                    currentPoints: { increment: aiBaseMinutes },
+                    level: newLevel,
+                    exp: newExp
                 }
             })
         ]);
@@ -109,7 +122,10 @@ export const submitQuest = async (req: Request, res: Response) => {
 
         return res.status(200).json({
             success: true,
-            message: 'クエストが完了しました。',
+            // レベルアップした場合はフロントエンドに専用のメッセージを返す
+            message: isLevelUp ? `レベルアップしました！ Lv.${newLevel}` : 'クエストが完了しました。',
+            isLevelUp: isLevelUp, // フロントで演出を出すためのフラグ
+            newLevel: newLevel,
             data: quest
         });
 

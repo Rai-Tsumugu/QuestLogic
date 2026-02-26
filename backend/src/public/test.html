@@ -3,51 +3,97 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QuestLogic - 統合テストポータル</title>
+    <title>QuestLogic - 統合テストポータル (RPG Update)</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #f3f4f6; padding: 20px; color: #333; }
-        .container { max-width: 900px; margin: auto; background: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         h1, h2 { color: #4f46e5; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; }
         .card { background: #f9fafb; padding: 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e5e7eb; }
-        button { background: #4f46e5; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-right: 8px; }
+        button { background: #4f46e5; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-right: 8px; margin-bottom: 8px; }
         button:hover { background: #4338ca; }
         button:disabled { background: #9ca3af; cursor: not-allowed; }
         .btn-parent { background: #10b981; }
         .btn-parent:hover { background: #059669; }
-        input[type="file"], input[type="number"], input[type="text"] { margin-top: 8px; margin-bottom: 16px; display: block; padding: 8px; width: 100%; max-width: 300px; border: 1px solid #ccc; border-radius: 4px; }
+        .btn-profile { background: #f59e0b; }
+        .btn-profile:hover { background: #d97706; }
+        
+        /* CSSに select を追加してデザインを統一 */
+        input[type="file"], input[type="number"], input[type="text"], select { 
+            margin-top: 8px; margin-bottom: 16px; display: block; padding: 8px; width: 100%; max-width: 300px; border: 1px solid #ccc; border-radius: 4px; background-color: white; 
+        }
+        
         pre { background: #1f2937; color: #10b981; padding: 16px; border-radius: 8px; overflow-x: auto; max-height: 400px; white-space: pre-wrap; }
-        .flex { display: flex; gap: 20px; }
-        .badge { background: #10b981; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; }
+        .flex { display: flex; gap: 20px; flex-wrap: wrap; }
+        .badge { background: #10b981; color: white; padding: 6px 10px; border-radius: 12px; font-size: 13px; font-weight: bold; margin-right: 5px; }
+        .badge.lv { background: #f59e0b; }
+        .badge.exp { background: #3b82f6; }
+        .profile-text { font-size: 14px; color: #4b5563; margin-top: 8px; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🚀 QuestLogic 統合テストポータル</h1>
+        <h1>🚀 QuestLogic 統合テストポータル (RPG Update)</h1>
         
         <div class="card">
-            <h2>1. 認証 (Auth) - 役割切り替え</h2>
+            <h2>1. 認証 (Auth) - アカウント切り替え</h2>
             <button onclick="devLogin('child')">👦 子供としてログイン</button>
             <button onclick="devLogin('parent')" class="btn-parent">👨‍👩‍👦 親としてログイン</button>
+            
             <p>現在の状態: <span id="authStatus" style="color:red; font-weight:bold;">未ログイン</span></p>
-            <p>現在のポイント(ゲーム時間): <span id="pointsDisplay" class="badge">0 分</span></p>
+            
+            <div style="margin-top: 10px;">
+                <span class="badge lv">Lv.<span id="levelDisplay">1</span></span>
+                <span class="badge exp">EXP: <span id="expDisplay">0</span></span>
+                <span class="badge">ゲーム時間: <span id="pointsDisplay">0</span> 分</span>
+            </div>
+            
+            <div class="profile-text">
+                📚 学年: <span id="gradeDisplay">未設定</span> | 
+                ✨ 得意なこと: <span id="specialtyDisplay">未設定</span>
+            </div>
         </div>
 
         <div class="flex">
-            <div class="card" style="flex: 1;">
-                <h2>2. クエスト提出 (子供専用)</h2>
+            <div class="card" style="flex: 1; min-width: 300px;">
+                <h2>2. プロフィール更新</h2>
+                <label>学年:</label>
+                <select id="gradeInput">
+                    <option value="">未設定 (選択してください)</option>
+                    <option value="小1">小学1年生 (小1)</option>
+                    <option value="小2">小学2年生 (小2)</option>
+                    <option value="小3">小学3年生 (小3)</option>
+                    <option value="小4">小学4年生 (小4)</option>
+                    <option value="小5">小学5年生 (小5)</option>
+                    <option value="小6">小学6年生 (小6)</option>
+                    <option value="中1">中学1年生 (中1)</option>
+                    <option value="中2">中学2年生 (中2)</option>
+                    <option value="中3">中学3年生 (中3)</option>
+                    <option value="高1">高校1年生 (高1)</option>
+                    <option value="高2">高校2年生 (高2)</option>
+                    <option value="高3">高校3年生 (高3)</option>
+                </select>
+                
+                <label>得意なこと (例: 算数、工作):</label>
+                <input type="text" id="specialtyInput" placeholder="得意なことを入力">
+                
+                <button onclick="updateProfile()" id="profileBtn" class="btn-profile" disabled>📝 プロフィールを保存</button>
+            </div>
+
+            <div class="card" style="flex: 1; min-width: 300px;">
+                <h2>3. クエスト提出 (子供専用)</h2>
                 <form id="questForm">
                     <input type="file" id="beforeImage" accept="image/*" required>
                     <input type="file" id="afterImage" accept="image/*" required>
-                    <button type="submit" id="submitBtn" disabled>AI分析開始</button>
+                    <button type="submit" id="submitBtn" disabled>⚔️ AI分析で経験値ゲット！</button>
                 </form>
             </div>
 
-            <div class="card" style="flex: 1;">
-                <h2>3. アクション</h2>
+            <div class="card" style="flex: 1; min-width: 300px;">
+                <h2>4. アクション (報酬/消費)</h2>
                 <label>対象クエストID:</label>
                 <input type="text" id="questId" placeholder="提出後に自動入力">
+                <button onclick="addBonus()" id="bonusBtn" class="btn-parent" disabled>🎁 親のボーナス (+10分)</button>
                 
-                <button onclick="addBonus()" id="bonusBtn" class="btn-parent" disabled>🎁 親のボーナス付与 (+10分)</button>
                 <hr style="margin: 16px 0;">
                 
                 <label>消費する時間 (分):</label>
@@ -86,21 +132,54 @@
                     
                     document.getElementById('authStatus').textContent = `ログイン成功: ${currentUser.name} (${currentUser.role})`;
                     document.getElementById('authStatus').style.color = 'green';
-                    document.getElementById('pointsDisplay').textContent = `${currentUser.currentPoints} 分`;
                     
-                    // 役割に応じてボタンを有効/無効化
+                    // ステータスの更新
+                    document.getElementById('levelDisplay').textContent = currentUser.level || 1;
+                    document.getElementById('expDisplay').textContent = currentUser.exp || 0;
+                    document.getElementById('pointsDisplay').textContent = currentUser.currentPoints || 0;
+                    
+                    // プロフィールの更新 (セレクトボックスに値をセット)
+                    document.getElementById('gradeDisplay').textContent = currentUser.grade || '未設定';
+                    document.getElementById('specialtyDisplay').textContent = currentUser.specialty || '未設定';
+                    
+                    // DBに保存されている学年と一致するoptionを自動選択
+                    document.getElementById('gradeInput').value = currentUser.grade || '';
+                    document.getElementById('specialtyInput').value = currentUser.specialty || '';
+                    
                     document.getElementById('submitBtn').disabled = (role !== 'child');
                     document.getElementById('consumeBtn').disabled = (role !== 'child');
                     document.getElementById('bonusBtn').disabled = (role !== 'parent');
+                    document.getElementById('profileBtn').disabled = false;
                     
-                    log(`[${currentUser.role}] としてログインしました。`, data.user);
+                    log(`[${currentUser.role}] としてログインしました。ステータスを読み込みました。`);
                 }
             } catch (err) {
                 log("ログインエラー", err.message);
             }
         }
 
-        // クエスト提出
+        // プロフィール更新処理
+        async function updateProfile() {
+            const grade = document.getElementById('gradeInput').value;
+            const specialty = document.getElementById('specialtyInput').value;
+            
+            log("プロフィールを更新しています...");
+            try {
+                const res = await fetch(`${BASE_URL}/users/profile`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `Bearer ${jwtToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ grade, specialty })
+                });
+                const data = await res.json();
+                log("プロフィール更新結果", data);
+                if(data.success) {
+                    devLogin(currentRole); 
+                    alert("プロフィールが保存されました！");
+                }
+            } catch (err) { log("エラー", err.message); }
+        }
+
+        // クエスト提出 (レベルアップ演出付き)
         document.getElementById('questForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             if (currentRole !== 'child') return alert("子供アカウントでログインしてください。");
@@ -125,12 +204,19 @@
 
                 if (data.success) {
                     document.getElementById('questId').value = data.data.id;
-                    devLogin('child'); // ウォレット最新化
+                    
+                    if (data.isLevelUp) {
+                        alert(`🎉 レベルアップしました！ 🎉\n\n新しいレベル: Lv.${data.newLevel}\n「よくがんばりました！」`);
+                    } else {
+                        alert(`経験値を獲得しました！\n獲得ゲーム時間: ${data.data.earnedPoints}分`);
+                    }
+                    
+                    devLogin('child');
                 }
             } catch (err) {
                 log("エラー", err.message);
             } finally {
-                document.getElementById('submitBtn').textContent = "AI分析開始";
+                document.getElementById('submitBtn').textContent = "⚔️ AI分析で経験値ゲット！";
                 document.getElementById('submitBtn').disabled = false;
             }
         });
