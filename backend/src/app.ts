@@ -90,7 +90,7 @@ app.get('/api/test/login/:role', async (req: Request, res: Response) => {
 // ------------------------------------------------------------------
 // 開発者用テストサイトの設定 (Dev Portal)
 // ------------------------------------------------------------------
-app.use('/dev', express.static(path.join(__dirname, 'public')));
+app.use('/dev', express.static(path.join(process.cwd(), 'src/public')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

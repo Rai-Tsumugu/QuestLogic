@@ -118,3 +118,26 @@ export const updateProfile = async (req: Request, res: Response) => {
         return res.status(500).json({ error: 'プロフィールの更新に失敗しました。' });
     }
 };
+
+/**
+ * 家族の招待コードを取得する (親が確認用)
+ * @route GET /api/users/invite-code
+ */
+export const getInviteCode = async (req: Request, res: Response) => {
+    try {
+        const familyId = req.user.familyId;
+        const family = await prisma.family.findUnique({ where: { id: familyId } });
+        
+        if (!family) {
+            return res.status(404).json({ error: '家族情報が見つかりません。' });
+        }
+
+        return res.status(200).json({
+            success: true,
+            inviteCode: family.inviteCode
+        });
+    } catch (error) {
+        console.error('招待コード取得エラー:', error);
+        return res.status(500).json({ error: 'サーバーエラーが発生しました。' });
+    }
+};

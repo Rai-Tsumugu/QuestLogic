@@ -78,6 +78,21 @@
                 
                 <button onclick="updateProfile()" id="profileBtn" class="btn-profile" disabled>📝 プロフィールを保存</button>
             </div>
+            <div class="card" style="flex: 1; min-width: 300px; border-left: 4px solid #3b82f6;">
+                <h2 style="color: #2563eb;">👨‍👩‍👧 家族連携 (Family)</h2>
+                
+                <div id="parentFamilySection" style="display: none;">
+                    <p style="font-size: 14px; color: #4b5563;">子供に以下のコードを教えてください。</p>
+                    <button onclick="fetchInviteCode()" class="btn-parent">🔑 招待コードを発行・確認</button>
+                    <div style="margin-top: 10px; font-size: 20px; font-weight: bold; color: #1d4ed8; letter-spacing: 3px;" id="inviteCodeDisplay">------</div>
+                </div>
+
+                <div id="childFamilySection" style="display: none;">
+                    <label>親からもらった招待コード (6桁):</label>
+                    <input type="text" id="joinCodeInput" placeholder="例: a1b2c3" maxlength="6" style="text-transform: uppercase;">
+                    <button onclick="joinFamily()" style="background: #3b82f6;">🤝 家族に参加する</button>
+                </div>
+            </div>
 
             <div class="card" style="flex: 1; min-width: 300px;">
                 <h2>3. クエスト提出 (子供専用)</h2>
@@ -102,12 +117,26 @@
             </div>
         </div>
 
+        <div class="card" id="resultCard" style="display: none; border-left: 4px solid #f59e0b;">
+            <h2 style="color: #d97706;">🌟 分析結果レポート</h2>
+            <div style="font-size: 16px; margin-bottom: 10px;">
+                <p>📝 <strong>作業量:</strong> <span id="starVolume" style="color: #eab308; letter-spacing: 2px;"></span></p>
+                <p>🧠 <strong>試行錯誤:</strong> <span id="starProcess" style="color: #eab308; letter-spacing: 2px;"></span></p>
+                <p>✨ <strong>丁寧さ:</strong> <span id="starCareful" style="color: #eab308; letter-spacing: 2px;"></span></p>
+                <p>🔍 <strong>振り返り:</strong> <span id="starReview" style="color: #eab308; letter-spacing: 2px;"></span></p>
+            </div>
+            <div style="background: #fffbeb; padding: 12px; border-radius: 8px;">
+                <p style="margin: 0; color: #92400e; font-weight: bold;">💬 先生からのコメント:</p>
+                <p id="childFeedback" style="margin: 5px 0 0 0; font-size: 14px; line-height: 1.5;"></p>
+            </div>
+        </div>
+
         <h2>実行ログ / レスポンス</h2>
         <pre id="output">システム準備完了...</pre>
     </div>
 
     <script>
-        const BASE_URL = 'http://localhost:3000/api';
+        const BASE_URL = 'https://QL-api.adcsvmc.net/api';
         let jwtToken = '';
         let currentUser = null;
         let currentRole = '';
@@ -117,6 +146,20 @@
             let text = `[${time}] ${message}\n`;
             if (data) text += JSON.stringify(data, null, 2) + '\n';
             document.getElementById('output').textContent = text + "------------------------\n" + document.getElementById('output').textContent;
+        }
+
+        // 10点満点のスコアを5段階の星(★)に変換するヘルパー関数
+        function getStars(score) {
+            const starCount = Math.ceil(score / 2);
+            return '★'.repeat(starCount) + '☆'.repeat(5 - starCount);
+        }
+
+        // ログイン状態に応じた家族UIの切り替え
+        function updateFamilyUI(role) {
+            document.getElementById('parentFamilySection').style.display = (role === 'parent') ? 'block' : 'none';
+            document.getElementById('childFamilySection').style.display = (role === 'child') ? 'block' : 'none';
+            document.getElementById('inviteCodeDisplay').textContent = '------';
+            document.getElementById('joinCodeInput').value = '';
         }
 
         // ログイン処理
@@ -133,16 +176,12 @@
                     document.getElementById('authStatus').textContent = `ログイン成功: ${currentUser.name} (${currentUser.role})`;
                     document.getElementById('authStatus').style.color = 'green';
                     
-                    // ステータスの更新
                     document.getElementById('levelDisplay').textContent = currentUser.level || 1;
                     document.getElementById('expDisplay').textContent = currentUser.exp || 0;
                     document.getElementById('pointsDisplay').textContent = currentUser.currentPoints || 0;
                     
-                    // プロフィールの更新 (セレクトボックスに値をセット)
                     document.getElementById('gradeDisplay').textContent = currentUser.grade || '未設定';
                     document.getElementById('specialtyDisplay').textContent = currentUser.specialty || '未設定';
-                    
-                    // DBに保存されている学年と一致するoptionを自動選択
                     document.getElementById('gradeInput').value = currentUser.grade || '';
                     document.getElementById('specialtyInput').value = currentUser.specialty || '';
                     
@@ -151,6 +190,11 @@
                     document.getElementById('bonusBtn').disabled = (role !== 'parent');
                     document.getElementById('profileBtn').disabled = false;
                     
+                    document.getElementById('resultCard').style.display = 'none';
+
+                    // UIの切り替えを実行
+                    updateFamilyUI(role);
+
                     log(`[${currentUser.role}] としてログインしました。ステータスを読み込みました。`);
                 }
             } catch (err) {
@@ -179,7 +223,7 @@
             } catch (err) { log("エラー", err.message); }
         }
 
-        // クエスト提出 (レベルアップ演出付き)
+        // クエスト提出 (星評価＆レベルアップ演出付き)
         document.getElementById('questForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             if (currentRole !== 'child') return alert("子供アカウントでログインしてください。");
@@ -192,6 +236,7 @@
 
             document.getElementById('submitBtn').textContent = "AI分析中...";
             document.getElementById('submitBtn').disabled = true;
+            document.getElementById('resultCard').style.display = 'none';
 
             try {
                 const res = await fetch(`${BASE_URL}/quests/submit`, {
@@ -205,6 +250,15 @@
                 if (data.success) {
                     document.getElementById('questId').value = data.data.id;
                     
+                    const breakdown = data.data.aiResult.score_breakdown;
+                    document.getElementById('starVolume').textContent = getStars(breakdown.volume);
+                    document.getElementById('starProcess').textContent = getStars(breakdown.process);
+                    document.getElementById('starCareful').textContent = getStars(breakdown.carefulness);
+                    document.getElementById('starReview').textContent = getStars(breakdown.review);
+                    document.getElementById('childFeedback').textContent = data.data.aiResult.feedback_to_child;
+                    
+                    document.getElementById('resultCard').style.display = 'block';
+
                     if (data.isLevelUp) {
                         alert(`🎉 レベルアップしました！ 🎉\n\n新しいレベル: Lv.${data.newLevel}\n「よくがんばりました！」`);
                     } else {
@@ -251,6 +305,47 @@
                 const data = await res.json();
                 log("ポイント消費結果", data);
                 if(data.success) devLogin('child');
+            } catch (err) { log("エラー", err.message); }
+        }
+
+        // 親が招待コードを取得する
+        async function fetchInviteCode() {
+            log("招待コードを取得中...");
+            try {
+                const res = await fetch(`${BASE_URL}/users/invite-code`, {
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${jwtToken}` }
+                });
+                const data = await res.json();
+                log("招待コード取得結果", data);
+                if(data.success) {
+                    document.getElementById('inviteCodeDisplay').textContent = data.inviteCode;
+                } else {
+                    alert(data.error);
+                }
+            } catch (err) { log("エラー", err.message); }
+        }
+
+        // 子供が招待コードを入力して家族に参加する
+        async function joinFamily() {
+            const inviteCode = document.getElementById('joinCodeInput').value;
+            if(!inviteCode) return alert("招待コードを入力してください。");
+            
+            log(`招待コード [${inviteCode}] で家族に参加中...`);
+            try {
+                const res = await fetch(`${BASE_URL}/users/join-family`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${jwtToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ inviteCode })
+                });
+                const data = await res.json();
+                log("家族参加結果", data);
+                if(data.success) {
+                    alert(data.message);
+                    devLogin('child');
+                } else {
+                    alert(data.error);
+                }
             } catch (err) { log("エラー", err.message); }
         }
     </script>
