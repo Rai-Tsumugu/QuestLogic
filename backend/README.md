@@ -44,3 +44,22 @@ npm run dev
 - `GET /api/health` ヘルスチェック
 - `POST /api/analyze` Before/After画像のAI分析（frontend互換）
 - `GET /dev/test.html` 開発者テストページ
+
+## 動作確認
+
+1. ヘルスチェック（AI設定状態を確認）
+
+```bash
+curl -sS http://localhost:3000/api/health
+```
+
+`ai.configured` が `true` なら `GEMINI_API_KEY` 設定済みです。
+
+2. AI分析エンドポイント確認
+
+```bash
+curl -X POST http://localhost:3000/api/analyze \
+	-F "beforeImage=@./sample-before.jpg" \
+	-F "afterImage=@./sample-after.jpg" \
+	-F 'metadata={"subject":"算数","topic":"分数","parentFocus":"途中式"}'
+```

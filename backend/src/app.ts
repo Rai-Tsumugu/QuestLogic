@@ -62,7 +62,14 @@ app.use('/api/users', userRoutes);
 
 // ヘルスチェック用
 app.get('/api/health', (req: Request, res: Response) => {
-    res.status(200).json({ success: true, message: 'QuestLogic API稼働中' });
+    res.status(200).json({
+        success: true,
+        message: 'QuestLogic API稼働中',
+        ai: {
+            configured: Boolean(process.env.GEMINI_API_KEY),
+            provider: 'gemini'
+        }
+    });
 });
 
 app.post('/api/analyze', upload.fields([{ name: 'beforeImage', maxCount: 1 }, { name: 'afterImage', maxCount: 1 }]), async (req: Request, res: Response) => {
