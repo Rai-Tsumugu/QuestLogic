@@ -1,4 +1,4 @@
-package com.anonymous.questlogic
+package com.rakutoyamazaki.questlogic
 
 import android.os.Build
 import android.os.Bundle

@@ -1,4 +1,4 @@
-package com.anonymous.questlogic
+package com.rakutoyamazaki.questlogic
 
 import android.app.Application
 import android.content.res.Configuration

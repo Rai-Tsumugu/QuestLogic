@@ -17,7 +17,7 @@
         "NSCameraUsageDescription": "宿題の学習前後を撮影してAI評価を行うためにカメラを使用します。",
         "NSPhotoLibraryUsageDescription": "学習前後のノート画像を選択するために写真ライブラリへアクセスします。"
       },
-      "bundleIdentifier": "com.anonymous.questlogic"
+      "bundleIdentifier": "com.rakutoyamazaki.questlogic"
     },
     "android": {
       "adaptiveIcon": {
@@ -29,7 +29,7 @@
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.RECORD_AUDIO"
       ],
-      "package": "com.anonymous.questlogic"
+      "package": "com.rakutoyamazaki.questlogic"
     },
     "plugins": [
       "expo-camera",

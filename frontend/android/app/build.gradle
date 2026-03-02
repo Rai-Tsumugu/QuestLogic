@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.anonymous.questlogic'
+    namespace 'com.rakutoyamazaki.questlogic'
     defaultConfig {
-        applicationId 'com.anonymous.questlogic'
+        applicationId 'com.rakutoyamazaki.questlogic'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
