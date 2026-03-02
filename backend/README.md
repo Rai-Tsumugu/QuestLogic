@@ -1,30 +1,46 @@
-1. npm install の実行
+# QuestLogic Backend
 
-2. .envの必要な設定
-.envファイルはbackendフォルダーの中となる。
-# ------------------------------------------------------------------
-# QuestLogic Backend Environment Variables
-# ------------------------------------------------------------------
+## セットアップ
 
-# サーバー設定 (Server Config)
-PORT=3000
+1. 依存関係をインストール
 
-# データベース接続 (PostgreSQL)
-# 形式: postgresql://[USER]:[PASSWORD]@[HOST]:[PORT]/[DATABASE_NAME]?schema=public
-DATABASE_URL=""
+```bash
+npm install
+```
 
-# Google OAuth 2.0 (認証用)
-GOOGLE_CLIENT_ID=""
-GOOGLE_CLIENT_SECRET=""
+2. `.env` を作成（`.env.example` をコピー）
 
-# JWT セキュリティキー (トークン暗号化用・任意の複雑な文字列)
-JWT_SECRET=""
+```bash
+cp .env.example .env
+```
 
-# Gemini AI (宿題分析用)
-GEMINI_API_KEY=""
-上の形式に従って中身を埋めること
-中に入るものはDiscordのバックエンドチャンネルの"Google Auth2.0"スレッドを開き、固定メッセージを参考
+必須項目:
 
-3. schema.prismaの設定
-backend/src/ の中にprisma フォルダー生成後、schema.prismaファイルを生成
-開発Discordのバックエンドチャンネルの"DB関連&API"スレッドを開き、固定メッセージを入力
+- `PORT`
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `GEMINI_API_KEY`
+
+3. Prisma Client を生成
+
+```bash
+npx prisma generate
+```
+
+4. DB スキーマを反映（初回）
+
+```bash
+npx prisma db push
+```
+
+5. 開発サーバ起動
+
+```bash
+npm run dev
+```
+
+## 開発用エンドポイント
+
+- `GET /api/health` ヘルスチェック
+- `POST /api/analyze` Before/After画像のAI分析（frontend互換）
+- `GET /dev/test.html` 開発者テストページ
