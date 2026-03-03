@@ -9,6 +9,27 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import fs from 'fs';
 
+function parseAiJsonResponse(responseText: string) {
+    try {
+        return JSON.parse(responseText);
+    } catch {
+        const withoutFence = responseText
+            .replace(/```json\s*/gi, '')
+            .replace(/```/g, '')
+            .trim();
+
+        const firstBrace = withoutFence.indexOf('{');
+        const lastBrace = withoutFence.lastIndexOf('}');
+
+        if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
+            throw new Error('AIレスポンスにJSONが見つかりません。');
+        }
+
+        const jsonCandidate = withoutFence.slice(firstBrace, lastBrace + 1);
+        return JSON.parse(jsonCandidate);
+    }
+}
+
 // AIモデルの初期化
 const API_KEY = process.env.GEMINI_API_KEY || '';
 const genAI = new GoogleGenerativeAI(API_KEY);
@@ -88,7 +109,7 @@ export const analyzeHomeworkImages = async (
         ]);
 
         const responseText = result.response.text();
-        return JSON.parse(responseText);
+        return parseAiJsonResponse(responseText);
     } catch (error) {
         console.error("Gemini API Error:", error);
         throw new Error("AI分析中にエラーが発生しました。");

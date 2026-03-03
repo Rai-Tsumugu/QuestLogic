@@ -1,6 +1,6 @@
-# QuestLogic Frontend (Expo Managed)
+# QuestLogic Frontend (Expo Bare)
 
-このディレクトリは Expo Managed (Expo Go) 版のモバイルアプリです。
+このディレクトリは Expo Bare Workflow で iOS / Android ネイティブ実行を行います。
 
 ## セットアップ
 
@@ -16,15 +16,34 @@ npm install
 EXPO_PUBLIC_API_BASE_URL=http://<LAN_IP>:3000
 ```
 
-3. 開発サーバ起動
+3. ネイティブプロジェクトを生成（初回または app.json 更新時）
 
 ```bash
-npm run start
+npx expo prebuild --clean
 ```
 
-4. Expo Go でQRコードを読み込み
+## 起動コマンド
 
-## 補足
+### iOS Simulator
 
-- 実機端末から `localhost` は使えません。PCのLAN IPを指定してください。
-- Firebase Analytics は Expo Go優先のため初期フェーズでは無効化しています。
+```bash
+npx expo run:ios
+```
+
+### Android Emulator
+
+```bash
+npx expo run:android
+```
+
+## API疎通確認
+
+1. `backend` を起動する
+2. `frontend` を `run:ios` または `run:android` で起動する
+3. アプリで「AI分析を開始する」を実行し、レスポンスが返ることを確認する
+
+## 注意点
+
+- Expo Go 前提ではなく、ネイティブビルド（Development Build）前提です。
+- 画像アセット（`assets/icon.png` など）が壊れていると `expo prebuild` が失敗します。
+- 実機利用時は `EXPO_PUBLIC_API_BASE_URL` にPCのLAN IPを設定してください。

@@ -10,8 +10,11 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import jwt from 'jsonwebtoken';
+import multer from 'multer';
 import { PrismaClient } from '@prisma/client';
+import { analyzeHomeworkImages } from './services/gemini.service';
 
 // ルーターのインポート
 import authRoutes from './routes/auth.routes';
@@ -21,6 +24,21 @@ import userRoutes from './routes/user.routes';
 // DBクライアントの初期化
 export const prisma = new PrismaClient();
 const app = express();
+
+const uploadDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const upload = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => cb(null, uploadDir),
+        filename: (req, file, cb) => {
+            const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+            cb(null, `${file.fieldname}-${uniqueSuffix}${path.extname(file.originalname)}`);
+        }
+    })
+});
 
 // ミドルウェアの設定
 app.use(cors({
@@ -44,7 +62,52 @@ app.use('/api/users', userRoutes);
 
 // ヘルスチェック用
 app.get('/api/health', (req: Request, res: Response) => {
-    res.status(200).json({ success: true, message: 'QuestLogic API稼働中' });
+    res.status(200).json({
+        success: true,
+        message: 'QuestLogic API稼働中',
+        ai: {
+            configured: Boolean(process.env.GEMINI_API_KEY),
+            provider: 'gemini'
+        }
+    });
+});
+
+app.post('/api/analyze', upload.fields([{ name: 'beforeImage', maxCount: 1 }, { name: 'afterImage', maxCount: 1 }]), async (req: Request, res: Response) => {
+    let beforeImagePath: string | null = null;
+    let afterImagePath: string | null = null;
+
+    try {
+        const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+        const beforeImage = files?.beforeImage?.[0];
+        const afterImage = files?.afterImage?.[0];
+
+        if (!beforeImage || !afterImage) {
+            return res.status(400).json({ error: 'BeforeとAfterの両方の画像が必要です。' });
+        }
+
+        beforeImagePath = beforeImage.path;
+        afterImagePath = afterImage.path;
+
+        const metadataRaw = req.body.metadata ? JSON.parse(req.body.metadata) : {};
+        const metadata = {
+            subject: metadataRaw.subject || '未指定',
+            topic: metadataRaw.topic || '未指定',
+            parentFocus: metadataRaw.parentFocus || metadataRaw.parent_focus || '特になし'
+        };
+
+        const result = await analyzeHomeworkImages(beforeImagePath, afterImagePath, metadata);
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error('AI分析エラー:', error);
+        return res.status(500).json({ error: 'AI分析に失敗しました。' });
+    } finally {
+        if (beforeImagePath && fs.existsSync(beforeImagePath)) {
+            fs.unlinkSync(beforeImagePath);
+        }
+        if (afterImagePath && fs.existsSync(afterImagePath)) {
+            fs.unlinkSync(afterImagePath);
+        }
+    }
 });
 
 // 開発用ダミーAPI: ロール(役割)を指定してテストログイン
