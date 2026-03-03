@@ -151,12 +151,28 @@ app.get('/api/test/login/:role', async (req: Request, res: Response) => {
 });
 
 // ------------------------------------------------------------------
-// 開発者用テストサイトの設定 (Dev Portal)
+// 開発者用テストサイトの設定 (Dev Portal) - Basic認証付き
 // ------------------------------------------------------------------
-app.use('/dev', express.static(path.join(process.cwd(), 'src/public')));
+
+const devAuth = (req: any, res: any, next: any) => {
+    // リクエストヘッダーから認証情報を取得してデコード
+    const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
+    const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+
+    // IDは 'admin'、パスワードを 'Quest2404' に指定
+    if (login === 'admin' && password === 'Quest2404') {
+        return next();
+    }
+
+    // 認証失敗時
+    res.set('WWW-Authenticate', 'Basic realm="QuestLogic Dev Portal"');
+    res.status(401).send('アクセスが拒否されました。正しいパスワードを入力してください。');
+};
+
+app.use('/dev', devAuth, express.static(path.join(process.cwd(), 'src/public')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 サーバーが起動しました: http://localhost:${PORT}`);
-    console.log(`🛠️  開発者テスト用ツール: http://localhost:${PORT}/dev/test.html`);
+    console.log(`QuestLogic API Server is running on port ${PORT}`);
 });
+export default app;
