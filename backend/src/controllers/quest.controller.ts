@@ -1,230 +1,224 @@
-/**
- * ------------------------------------------------------------------
- * Quest Controller
- * @description
- * クエスト（宿題）の提出、画像アップロード処理、AI分析の実行、
- * および結果と報酬(ポイント)のデータベース保存を行います。
- * ------------------------------------------------------------------
- */
-
 import { Request, Response } from 'express';
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
 import { prisma } from '../app';
-import { analyzeHomeworkImages } from '../services/gemini.service';
-import { calculateLevelUp } from '../utils/level.util';
+import fs from 'fs';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// ------------------------------------------------------------------
-// 画像アップロードの設定 (Multer)
-// ------------------------------------------------------------------
-const uploadDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
+// Gemini APIの初期化 (環境変数からAPIキーを取得)
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+
+// 画像ファイルをGeminiが読み込める形式に変換するヘルパー関数
+function fileToGenerativePart(filePath: string, mimeType: string) {
+    return {
+        inlineData: {
+            data: Buffer.from(fs.readFileSync(filePath)).toString("base64"),
+            mimeType
+        },
+    };
 }
 
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-    }
-});
-
-export const uploadImages = multer({ storage }).fields([
-    { name: 'beforeImage', maxCount: 1 },
-    { name: 'afterImage', maxCount: 1 }
-]);
-
-/**
- * ------------------------------------------------------------------
- * クエスト提出 API (POST /api/quests/submit)
- * ------------------------------------------------------------------
- */
-export const submitQuest = async (req: Request, res: Response) => {
-    try {
-        const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-        const beforeImage = files['beforeImage']?.[0];
-        const afterImage = files['afterImage']?.[0];
-
-        if (!beforeImage || !afterImage) {
-            return res.status(400).json({ error: 'BeforeとAfterの両方の画像が必要です。' });
-        }
-
-        const { childId, familyId, subject, topic, parentFocus } = req.body;
-
-        if (!childId || !familyId) {
-            return res.status(400).json({ error: 'childIdとfamilyIdが必要です。' });
-        }
-
-        const beforeImageUrl = `/uploads/${beforeImage.filename}`;
-        const afterImageUrl = `/uploads/${afterImage.filename}`;
-
-        // 1. 分析中のクエストレコードを作成
-        let quest = await prisma.quest.create({
-            data: {
-                childId,
-                familyId,
-                subject: subject || '未指定',
-                topic: topic || '未指定',
-                parentFocus: parentFocus || '特になし',
-                beforeImageUrl,
-                afterImageUrl,
-                status: 'ANALYZING',
-            }
-        });
-
-        // 2. AI分析を実行
-        const aiResult = await analyzeHomeworkImages(
-            beforeImage.path,
-            afterImage.path,
-            { subject, topic, parentFocus }
-        );
-
-        // 3. 報酬計算 (ポイント と 経験値)
-        const totalScore = aiResult.total_score;
-        const aiBaseMinutes = Math.floor((totalScore / 100) * 40);
-
-        // 子供の現在のレベル情報を取得
-        const childUser = await prisma.user.findUnique({ where: { id: childId } });
-        if (!childUser) {
-            return res.status(404).json({ error: 'ユーザーが見つかりません。' });
-        }
-
-        // レベルアップ計算 (AIスコアをそのまま経験値として付与)
-        const { newLevel, newExp, isLevelUp } = calculateLevelUp(childUser.level, childUser.exp, totalScore);
-
-        // 4. トランザクション処理 (クエスト更新 + ユーザーのウォレット・レベル更新)
-        await prisma.$transaction([
-            prisma.quest.update({
-                where: { id: quest.id },
-                data: {
-                    status: 'COMPLETED',
-                    aiResult: aiResult,
-                    earnedPoints: aiBaseMinutes,
-                    finishedAt: new Date()
-                }
-            }),
-            prisma.user.update({
-                where: { id: childId },
-                data: {
-                    currentPoints: { increment: aiBaseMinutes },
-                    level: newLevel,
-                    exp: newExp
-                }
-            })
-        ]);
-
-        // 更新後のクエスト情報を再取得して返す
-        quest = await prisma.quest.findUnique({ where: { id: quest.id } }) as any;
-
-        return res.status(200).json({
-            success: true,
-            // レベルアップした場合はフロントエンドに専用のメッセージを返す
-            message: isLevelUp ? `レベルアップしました！ Lv.${newLevel}` : 'クエストが完了しました。',
-            isLevelUp: isLevelUp, // フロントで演出を出すためのフラグ
-            newLevel: newLevel,
-            data: quest
-        });
-
-    } catch (error) {
-        console.error('クエスト提出エラー:', error);
-        return res.status(500).json({ error: 'サーバー内部エラーが発生しました。' });
-    }
-};
-
-/**
- * ------------------------------------------------------------------
- * 家族のクエスト一覧取得 API (GET /api/quests)
- * ------------------------------------------------------------------
- */
-export const getFamilyQuests = async (req: Request, res: Response) => {
+// クエスト一覧取得 (家族全員が可能)
+export const getQuests = async (req: Request, res: Response) => {
     try {
         const familyId = req.user.familyId;
+        if (!familyId) return res.status(400).json({ error: '家族連携が完了していません。' });
 
         const quests = await prisma.quest.findMany({
-            where: { familyId: familyId },
-            orderBy: { startedAt: 'desc' },
-            include: {
-                child: { select: { name: true, avatarUrl: true } }
-            }
+            where: { familyId },
+            // 【修正】依頼2, 3の要件に合わせて取得フィールドを明示的に指定
+            select: {
+                id: true,
+                familyId: true,
+                status: true,
+                earnedPoints: true,
+                createdAt: true, // 依頼3: createdAt の追加
+                beforeImageUrl: true, // 依頼2: 画像URLの追加
+                afterImageUrl: true,  // 依頼2: 画像URLの追加
+                subject: true,        // 依頼2: 教科の追加
+                // topic は既存スキーマにない場合は subject で代用するか、スキーマ追加が必要です
+                aiResult: true, // 依頼3: aiResult (feedback_to_parent含む) はJSONとして丸ごと返却
+                child: {
+                    select: { name: true, avatarUrl: true }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
         });
 
         return res.status(200).json({ success: true, data: quests });
     } catch (error) {
-        console.error('クエスト取得エラー:', error);
-        return res.status(500).json({ error: 'データの取得に失敗しました。' });
+        console.error('クエスト一覧取得エラー:', error);
+        return res.status(500).json({ error: 'サーバーエラーが発生しました。' });
     }
 };
 
-/**
- * ------------------------------------------------------------------
- * 親のサポート（追加報酬付与） API (POST /api/quests/:id/bonus)
- * ------------------------------------------------------------------
- */
-export const addParentBonus = async (req: Request, res: Response) => {
+// ボーナス付与 (親専用)
+export const addBonus = async (req: Request, res: Response) => {
     try {
         const questId = req.params.id;
         const { bonusPoints } = req.body;
+        const parentFamilyId = req.user.familyId;
 
-        if (!bonusPoints || isNaN(bonusPoints)) {
+        if (!bonusPoints || typeof bonusPoints !== 'number') {
             return res.status(400).json({ error: 'ボーナスポイントを正しく指定してください。' });
         }
 
         const quest = await prisma.quest.findUnique({ where: { id: questId } });
-        if (!quest) {
-            return res.status(404).json({ error: 'クエストが見つかりません。' });
+        if (!quest) return res.status(404).json({ error: 'クエストが見つかりません。' });
+        if (quest.familyId !== parentFamilyId) {
+            return res.status(403).json({ error: '他の家族のクエストにはアクセスできません。' });
         }
 
-        // トランザクションでクエストの累計ポイント更新と、ユーザーのウォレット加算を行う
-        const [updatedQuest] = await prisma.$transaction([
-            prisma.quest.update({
-                where: { id: questId },
-                data: { earnedPoints: { increment: Number(bonusPoints) } }
-            }),
-            prisma.user.update({
-                where: { id: quest.childId },
-                data: { currentPoints: { increment: Number(bonusPoints) } }
-            })
-        ]);
+        const family = await prisma.family.findUnique({ where: { id: parentFamilyId } });
+        const minutesPerPoint = family?.minutesPerPoint || 2;
+
+        const updatedQuest = await prisma.quest.update({
+            where: { id: questId },
+            data: { earnedPoints: quest.earnedPoints + bonusPoints }
+        });
+
+        const updatedUser = await prisma.user.update({
+            where: { id: quest.childId },
+            data: { currentPoints: { increment: bonusPoints } }
+        });
 
         return res.status(200).json({
             success: true,
-            message: `子供に ${bonusPoints} 分の追加ボーナスを付与しました！`,
-            data: updatedQuest
+            message: `子供に ${bonusPoints} ポイントの追加ボーナスを付与しました！`,
+            earnedPoints: updatedQuest.earnedPoints,
+            earnedMinutes: updatedQuest.earnedPoints * minutesPerPoint,
+            currentPoints: updatedUser.currentPoints,
+            currentMinutes: updatedUser.currentPoints * minutesPerPoint,
+            minutesPerPoint
         });
     } catch (error) {
         console.error('ボーナス付与エラー:', error);
-        return res.status(500).json({ error: 'ボーナスの付与に失敗しました。' });
+        return res.status(500).json({ error: 'サーバーエラーが発生しました。' });
     }
 };
 
-/**
- * ------------------------------------------------------------------
- * クエスト詳細取得 API (GET /api/quests/:id)
- * ------------------------------------------------------------------
- */
-export const getQuestById = async (req: Request, res: Response) => {
+// クエスト提出とGemini AI分析 (子供専用)
+export const submitQuest = async (req: Request, res: Response) => {
     try {
-        const questId = req.params.id;
+        const childId = req.user.userId;
         const familyId = req.user.familyId;
 
-        const quest = await prisma.quest.findFirst({
-            where: { 
-                id: questId,
-                familyId: familyId
-            },
-            include: { child: { select: { name: true } } }
-        });
+        if (!familyId) return res.status(400).json({ error: '家族連携が完了していないため、提出できません。' });
 
-        if (!quest) {
-            return res.status(404).json({ error: 'クエストが見つかりません。' });
+        const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+        if (!files || !files.beforeImage || !files.afterImage) {
+            return res.status(400).json({ error: 'BeforeとAfterの両方の画像が必要です。' });
         }
 
-        return res.status(200).json({ success: true, data: quest });
+        const beforeImageFile = files.beforeImage[0];
+        const afterImageFile = files.afterImage[0];
+        const subject = req.body.subject || '未設定';
+        const topic = req.body.topic || '未設定';
+
+        // 1. Gemini APIによる画像分析
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        
+        const prompt = `あなたはプロの家庭教師です。以下の「勉強前」と「勉強後」の画像を比較し、子供の学習成果を評価してください。
+        教科は「${subject}」、トピックは「${topic}」です。
+        必ず以下のJSONフォーマットのみを絶対に出力してください。マークダウン( \`\`\`json 等 )は一切含めないでください。
+        {
+          "summary": "全体の要約（簡潔に）",
+          "score_breakdown": {
+            "volume": 8,
+            "process": 9,
+            "carefulness": 7,
+            "review": 6
+          },
+          "total_score": 81,
+          "features": [
+            { "type": "特徴種別", "location": "場所", "description": "詳細説明" }
+          ],
+          "suspicion_flag": false,
+          "suspicion_reason": null,
+          "feedback_to_child": "子供への優しいメッセージ",
+          "feedback_to_parent": "親へのメッセージ"
+        }`;
+
+        const beforePart = fileToGenerativePart(beforeImageFile.path, beforeImageFile.mimetype);
+        const afterPart = fileToGenerativePart(afterImageFile.path, afterImageFile.mimetype);
+
+        // Geminiにリクエスト送信
+        const result = await model.generateContent([prompt, beforePart, afterPart]);
+        let responseText = result.response.text();
+        
+        // Geminiがマークダウン付きで返してきた場合の除去処理
+        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        
+        // JSONパース
+        let aiResultData;
+        try {
+            aiResultData = JSON.parse(responseText);
+        } catch (e) {
+            console.error('Geminiレスポンスのパースエラー:', responseText);
+            return res.status(500).json({ error: 'AIの分析結果を読み取れませんでした。もう一度お試しください。' });
+        }
+
+        // 2. 報酬とレベルの計算
+        const user = await prisma.user.findUnique({ where: { id: childId } });
+        if (!user) return res.status(404).json({ error: 'ユーザーが見つかりません。' });
+
+        const family = await prisma.family.findUnique({ where: { id: familyId } });
+        const minutesPerPoint = family?.minutesPerPoint || 2;
+
+        // ルール: 合計スコア(100点満点)を5で割った数値をポイントとする (例: 80点 -> 16ポイント)
+        const earnedPoints = Math.floor((aiResultData.total_score || 0) / 5);
+        const earnedMinutes = earnedPoints * minutesPerPoint;
+        
+        // ルール: 100 EXPごとに1レベルアップ
+        const currentExp = user.exp || 0;
+        const earnedExp = aiResultData.total_score || 0;
+        const newExp = currentExp + earnedExp;
+        const currentLevel = user.level || 1;
+        const newLevel = Math.floor(newExp / 100) + 1;
+        const isLevelUp = newLevel > currentLevel;
+
+        // 3. データベースの更新
+        const newQuest = await prisma.quest.create({
+            data: {
+                childId,
+                familyId,
+                status: 'COMPLETED',
+                earnedPoints,
+                subject,
+                beforeImageUrl: beforeImageFile.path,
+                afterImageUrl: afterImageFile.path,
+                aiResult: aiResultData as any
+            }
+        });
+
+        const updatedUser = await prisma.user.update({
+            where: { id: childId },
+            data: {
+                currentPoints: { increment: earnedPoints },
+                exp: newExp,
+                level: newLevel 
+            }
+        });
+
+        // 4. APIレスポンスの返却
+        return res.status(200).json({
+            success: true,
+            message: isLevelUp ? `レベルアップしました！ Lv.${newLevel}` : 'AI分析が完了し、ポイントを獲得しました！',
+            isLevelUp,
+            newLevel,
+            data: {
+                id: newQuest.id,
+                childId: newQuest.childId,
+                familyId: newQuest.familyId,
+                status: newQuest.status,
+                aiResult: newQuest.aiResult
+            },
+            earnedPoints,
+            earnedMinutes,
+            currentPoints: updatedUser.currentPoints,
+            currentMinutes: updatedUser.currentPoints * minutesPerPoint,
+            minutesPerPoint
+        });
     } catch (error) {
-        return res.status(500).json({ error: 'データの取得に失敗しました。' });
+        console.error('クエスト提出＆AI分析エラー:', error);
+        return res.status(500).json({ error: 'サーバー処理中にエラーが発生しました。' });
     }
 };

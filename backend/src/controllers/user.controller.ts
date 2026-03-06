@@ -1,36 +1,17 @@
-/**
- * ------------------------------------------------------------------
- * User & Family Controller
- * @description
- * 家族連携（招待コード入力）や、ポイント（ゲーム時間）の消費を処理します。
- * ------------------------------------------------------------------
- */
 import { Request, Response } from 'express';
 import { prisma } from '../app';
 
-/**
- * 家族に参加する (子供が親の招待コードを入力)
- * @route POST /api/users/join-family
- */
+// 家族連携 (子供専用)
 export const joinFamily = async (req: Request, res: Response) => {
     try {
-        const userId = req.user.userId;
         const { inviteCode } = req.body;
+        const userId = req.user.userId; // JWTから安全に取得
 
-        if (!inviteCode) {
-            return res.status(400).json({ error: '招待コードが必要です。' });
-        }
+        if (!inviteCode) return res.status(400).json({ error: '招待コードが必要です。' });
 
-        // 招待コードから家族を検索
-        const family = await prisma.family.findUnique({
-            where: { inviteCode }
-        });
+        const family = await prisma.family.findFirst({ where: { inviteCode } });
+        if (!family) return res.status(404).json({ error: '無効な招待コードです。' });
 
-        if (!family) {
-            return res.status(404).json({ error: '無効な招待コードです。' });
-        }
-
-        // ユーザーの familyId を更新
         const updatedUser = await prisma.user.update({
             where: { id: userId },
             data: { familyId: family.id }
@@ -39,95 +20,96 @@ export const joinFamily = async (req: Request, res: Response) => {
         return res.status(200).json({
             success: true,
             message: `${family.name} に参加しました！`,
-            data: updatedUser
+            data: { id: updatedUser.id, familyId: updatedUser.familyId }
         });
     } catch (error) {
-        console.error('家族参加エラー:', error);
+        console.error('家族連携エラー:', error);
         return res.status(500).json({ error: 'サーバーエラーが発生しました。' });
     }
 };
 
-/**
- * ゲーム時間を消費する (物理ロック解除時などに呼び出し)
- * @route POST /api/users/consume-points
- */
+// ポイント消費 (子供専用)
 export const consumePoints = async (req: Request, res: Response) => {
     try {
+        const { consumePoints } = req.body; // 'minutes' ではなく 'consumePoints' を受け取る
         const userId = req.user.userId;
-        const { minutes } = req.body; // 消費したい時間(分)
+        const familyId = req.user.familyId;
 
-        if (!minutes || isNaN(minutes) || minutes <= 0) {
-            return res.status(400).json({ error: '消費する時間を正しく入力してください。' });
+        if (!consumePoints || typeof consumePoints !== 'number' || consumePoints <= 0) {
+            return res.status(400).json({ error: '消費するポイントを正しく指定してください。' });
         }
 
-        // 現在のポイントを確認
         const user = await prisma.user.findUnique({ where: { id: userId } });
-        
-        if (!user || user.currentPoints < minutes) {
-            return res.status(400).json({ error: 'ポイント（ゲーム時間）が足りません。宿題を頑張ろう！' });
+        if (!user || user.currentPoints < consumePoints) {
+            return res.status(400).json({ error: 'ポイント残高が不足しています。' });
         }
 
-        // ポイントをマイナスする
+        const family = await prisma.family.findUnique({ where: { id: familyId } });
+        if (!family) {
+            return res.status(400).json({ error: '家族情報が見つかりません。' });
+        }
+
         const updatedUser = await prisma.user.update({
             where: { id: userId },
-            data: {
-                currentPoints: {
-                    decrement: Number(minutes)
-                }
-            }
+            data: { currentPoints: user.currentPoints - consumePoints }
         });
+
+        const remainingMinutes = updatedUser.currentPoints * family.minutesPerPoint;
 
         return res.status(200).json({
             success: true,
-            message: `${minutes}分 のロックを解除しました。`,
-            currentPoints: updatedUser.currentPoints
+            remainingPoints: updatedUser.currentPoints,
+            remainingMinutes: remainingMinutes,
+            minutesPerPoint: family.minutesPerPoint
         });
     } catch (error) {
         console.error('ポイント消費エラー:', error);
-        return res.status(500).json({ error: '処理に失敗しました。' });
+        return res.status(500).json({ error: 'サーバーエラーが発生しました。' });
     }
 };
 
-/**
- * プロフィール更新API (会員登録後の詳細設定など)
- * @route PUT /api/users/profile
- */
+// プロフィール更新 (全員可能)
 export const updateProfile = async (req: Request, res: Response) => {
     try {
+        const { grade, specialty, name, avatarUrl } = req.body;
         const userId = req.user.userId;
-        const { name, grade, specialty, avatarUrl } = req.body;
 
         const updatedUser = await prisma.user.update({
             where: { id: userId },
             data: {
-                // 値が存在する場合のみ更新する（undefinedの場合は無視）
-                ...(name && { name }),
-                ...(grade && { grade }),
-                ...(specialty && { specialty }),
-                ...(avatarUrl && { avatarUrl }),
+                ...(grade !== undefined && { grade }),
+                ...(specialty !== undefined && { specialty }),
+                ...(name !== undefined && { name }),
+                ...(avatarUrl !== undefined && { avatarUrl }),
             }
         });
 
         return res.status(200).json({
             success: true,
             message: 'プロフィールを更新しました。',
-            data: updatedUser
+            data: {
+                id: updatedUser.id,
+                grade: updatedUser.grade,
+                specialty: updatedUser.specialty,
+                name: updatedUser.name,
+                avatarUrl: updatedUser.avatarUrl
+            }
         });
     } catch (error) {
         console.error('プロフィール更新エラー:', error);
-        return res.status(500).json({ error: 'プロフィールの更新に失敗しました。' });
+        return res.status(500).json({ error: 'サーバーエラーが発生しました。' });
     }
 };
 
-/**
- * 家族の招待コードを取得する (親が確認用)
- * @route GET /api/users/invite-code
- */
+// 招待コード取得 (親専用)
 export const getInviteCode = async (req: Request, res: Response) => {
     try {
         const familyId = req.user.familyId;
+        if (!familyId) {
+            return res.status(400).json({ error: '家族情報が設定されていません。' });
+        }
+
         const family = await prisma.family.findUnique({ where: { id: familyId } });
-        
         if (!family) {
             return res.status(404).json({ error: '家族情報が見つかりません。' });
         }

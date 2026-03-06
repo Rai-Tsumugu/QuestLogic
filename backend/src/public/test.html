@@ -17,7 +17,6 @@
         .btn-profile { background: #f59e0b; }
         .btn-profile:hover { background: #d97706; }
         
-        /* CSSに select を追加してデザインを統一 */
         input[type="file"], input[type="number"], input[type="text"], select { 
             margin-top: 8px; margin-bottom: 16px; display: block; padding: 8px; width: 100%; max-width: 300px; border: 1px solid #ccc; border-radius: 4px; background-color: white; 
         }
@@ -44,7 +43,7 @@
             <div style="margin-top: 10px;">
                 <span class="badge lv">Lv.<span id="levelDisplay">1</span></span>
                 <span class="badge exp">EXP: <span id="expDisplay">0</span></span>
-                <span class="badge">ゲーム時間: <span id="pointsDisplay">0</span> 分</span>
+                <span class="badge">所持ポイント: <span id="pointsDisplay">0</span> pt</span>
             </div>
             
             <div class="profile-text">
@@ -78,6 +77,7 @@
                 
                 <button onclick="updateProfile()" id="profileBtn" class="btn-profile" disabled>📝 プロフィールを保存</button>
             </div>
+            
             <div class="card" style="flex: 1; min-width: 300px; border-left: 4px solid #3b82f6;">
                 <h2 style="color: #2563eb;">👨‍👩‍👧 家族連携 (Family)</h2>
                 
@@ -85,6 +85,14 @@
                     <p style="font-size: 14px; color: #4b5563;">子供に以下のコードを教えてください。</p>
                     <button onclick="fetchInviteCode()" class="btn-parent">🔑 招待コードを発行・確認</button>
                     <div style="margin-top: 10px; font-size: 20px; font-weight: bold; color: #1d4ed8; letter-spacing: 3px;" id="inviteCodeDisplay">------</div>
+                    
+                    <div style="margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 15px;">
+                        <label>⚙️ 1ポイントあたりのゲーム時間 (分):</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="number" id="minutesPerPointInput" placeholder="例: 5" value="5" style="margin: 0; max-width: 100px;">
+                            <button onclick="updateFamilySettings()" class="btn-parent" style="margin: 0;">保存</button>
+                        </div>
+                    </div>
                 </div>
 
                 <div id="childFamilySection" style="display: none;">
@@ -107,12 +115,12 @@
                 <h2>4. アクション (報酬/消費)</h2>
                 <label>対象クエストID:</label>
                 <input type="text" id="questId" placeholder="提出後に自動入力">
-                <button onclick="addBonus()" id="bonusBtn" class="btn-parent" disabled>🎁 親のボーナス (+10分)</button>
+                <button onclick="addBonus()" id="bonusBtn" class="btn-parent" disabled>🎁 親のボーナス (+10 pt)</button>
                 
                 <hr style="margin: 16px 0;">
                 
-                <label>消費する時間 (分):</label>
-                <input type="number" id="consumeAmount" value="15">
+                <label>消費するポイント (pt):</label>
+                <input type="number" id="consumeAmount" value="2">
                 <button onclick="consumePoints()" id="consumeBtn" disabled style="background:#ef4444;">🎮 ロック解除 (ポイント消費)</button>
             </div>
         </div>
@@ -148,13 +156,11 @@
             document.getElementById('output').textContent = text + "------------------------\n" + document.getElementById('output').textContent;
         }
 
-        // 10点満点のスコアを5段階の星(★)に変換するヘルパー関数
         function getStars(score) {
             const starCount = Math.ceil(score / 2);
             return '★'.repeat(starCount) + '☆'.repeat(5 - starCount);
         }
 
-        // ログイン状態に応じた家族UIの切り替え
         function updateFamilyUI(role) {
             document.getElementById('parentFamilySection').style.display = (role === 'parent') ? 'block' : 'none';
             document.getElementById('childFamilySection').style.display = (role === 'child') ? 'block' : 'none';
@@ -162,7 +168,6 @@
             document.getElementById('joinCodeInput').value = '';
         }
 
-        // ログイン処理
         async function devLogin(role) {
             try {
                 const res = await fetch(`${BASE_URL}/test/login/${role}`);
@@ -192,8 +197,16 @@
                     
                     document.getElementById('resultCard').style.display = 'none';
 
-                    // UIの切り替えを実行
                     updateFamilyUI(role);
+
+                    // 親の場合は現在の換算レートを取得して表示
+                    if(role === 'parent') {
+                        fetch(`${BASE_URL}/family/settings`, {
+                            headers: { 'Authorization': `Bearer ${jwtToken}` }
+                        }).then(r => r.json()).then(d => {
+                            if(d.success) document.getElementById('minutesPerPointInput').value = d.minutesPerPoint;
+                        }).catch(e => console.log(e));
+                    }
 
                     log(`[${currentUser.role}] としてログインしました。ステータスを読み込みました。`);
                 }
@@ -202,7 +215,6 @@
             }
         }
 
-        // プロフィール更新処理
         async function updateProfile() {
             const grade = document.getElementById('gradeInput').value;
             const specialty = document.getElementById('specialtyInput').value;
@@ -223,7 +235,21 @@
             } catch (err) { log("エラー", err.message); }
         }
 
-        // クエスト提出 (星評価＆レベルアップ演出付き)
+        // 親専用: 換算レートの更新
+        async function updateFamilySettings() {
+            const mpp = document.getElementById('minutesPerPointInput').value;
+            try {
+                const res = await fetch(`${BASE_URL}/family/settings`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `Bearer ${jwtToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ minutesPerPoint: Number(mpp) })
+                });
+                const data = await res.json();
+                log("家族設定更新", data);
+                if(data.success) alert(`設定を更新しました！\n1ポイント = ${data.minutesPerPoint}分`);
+            } catch(e) { log("エラー", e.message); }
+        }
+
         document.getElementById('questForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             if (currentRole !== 'child') return alert("子供アカウントでログインしてください。");
@@ -259,10 +285,11 @@
                     
                     document.getElementById('resultCard').style.display = 'block';
 
+                    // 【修正】res ではなく data オブジェクトから値を参照する
                     if (data.isLevelUp) {
-                        alert(`🎉 レベルアップしました！ 🎉\n\n新しいレベル: Lv.${data.newLevel}\n「よくがんばりました！」`);
+                        alert(`🎉 レベルアップしました！ 🎉\n\n新しいレベル: Lv.${data.newLevel}\n\n獲得ゲーム時間: ${data.earnedMinutes}分 (獲得ポイント: ${data.earnedPoints}pt)`);
                     } else {
-                        alert(`経験値を獲得しました！\n獲得ゲーム時間: ${data.data.earnedPoints}分`);
+                        alert(`${data.message}\n獲得ゲーム時間: ${data.earnedMinutes}分 (獲得ポイント: ${data.earnedPoints}pt)`);
                     }
                     
                     devLogin('child');
@@ -275,7 +302,6 @@
             }
         });
 
-        // ボーナス付与
         async function addBonus() {
             if (currentRole !== 'parent') return alert("親アカウントでログインしてください。");
             const questId = document.getElementById('questId').value;
@@ -288,27 +314,33 @@
                 });
                 const data = await res.json();
                 log("ボーナス付与結果", data);
+                if(data.success) alert(`ボーナスを付与しました！\n追加ゲーム時間: ${data.earnedMinutes}分`);
             } catch (err) { log("エラー", err.message); }
         }
 
-        // ポイント消費
         async function consumePoints() {
             if (currentRole !== 'child') return alert("子供アカウントでログインしてください。");
-            const minutes = document.getElementById('consumeAmount').value;
+            const consumePts = document.getElementById('consumeAmount').value;
             
             try {
                 const res = await fetch(`${BASE_URL}/users/consume-points`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${jwtToken}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ minutes: Number(minutes) })
+                    // 【修正】キーを 'minutes' から 'consumePoints' に変更
+                    body: JSON.stringify({ consumePoints: Number(consumePts) })
                 });
                 const data = await res.json();
                 log("ポイント消費結果", data);
-                if(data.success) devLogin('child');
+                
+                if(data.success) {
+                    alert(`${consumePts} ポイント消費しました！\nロック解除時間: ${data.remainingMinutes}分`);
+                    devLogin('child');
+                } else {
+                    alert(data.error);
+                }
             } catch (err) { log("エラー", err.message); }
         }
 
-        // 親が招待コードを取得する
         async function fetchInviteCode() {
             log("招待コードを取得中...");
             try {
@@ -326,7 +358,6 @@
             } catch (err) { log("エラー", err.message); }
         }
 
-        // 子供が招待コードを入力して家族に参加する
         async function joinFamily() {
             const inviteCode = document.getElementById('joinCodeInput').value;
             if(!inviteCode) return alert("招待コードを入力してください。");

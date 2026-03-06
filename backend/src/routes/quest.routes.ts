@@ -1,19 +1,26 @@
 import { Router } from 'express';
-import { submitQuest, uploadImages, getFamilyQuests, addParentBonus } from '../controllers/quest.controller';
-import { authenticateJWT, requireParentRole } from '../middlewares/auth.middleware';
+import multer from 'multer';
+import { submitQuest, addBonus, getQuests } from '../controllers/quest.controller';
+import { authenticateJWT, requireParentRole, requireChildRole } from '../middlewares/auth.middleware';
 
 const router = Router();
+const upload = multer({ dest: 'uploads/' }); // メモリリーク対策としてディスク保存を使用
 
-// すべてのクエスト関連APIはログイン(JWT)が必須
+// 全てのエンドポイントでJWT認証を必須にする
 router.use(authenticateJWT);
 
-// クエスト一覧取得 (親・子供どちらもアクセス可能)
-router.get('/', getFamilyQuests);
+// 子供専用API (クエスト提出)
+router.post(
+    '/submit',
+    requireChildRole,
+    upload.fields([{ name: 'beforeImage', maxCount: 1 }, { name: 'afterImage', maxCount: 1 }]),
+    submitQuest
+);
 
-// クエスト提出 (画像アップロードを含む)
-router.post('/submit', uploadImages, submitQuest);
+// 親専用API (ボーナス付与)
+router.post('/:id/bonus', requireParentRole, addBonus);
 
-// 親のサポート(ボーナス付与) (親のみアクセス可能)
-router.post('/:id/bonus', requireParentRole, addParentBonus);
+// 家族全員が実行可能なAPI (クエスト一覧取得)
+router.get('/', getQuests);
 
 export default router;

@@ -1,17 +1,20 @@
 import { Router } from 'express';
-// getInviteCode を追加でインポート
 import { joinFamily, consumePoints, updateProfile, getInviteCode } from '../controllers/user.controller';
-import { authenticateJWT, requireParentRole } from '../middlewares/auth.middleware';
+import { authenticateJWT, requireParentRole, requireChildRole } from '../middlewares/auth.middleware';
 
 const router = Router();
 
+// 全てのエンドポイントでJWT認証を必須にする
 router.use(authenticateJWT);
 
-// 招待コードの取得 (親のみ)
+// 親専用API (招待コードの確認)
 router.get('/invite-code', requireParentRole, getInviteCode);
 
-router.post('/join-family', joinFamily);
-router.post('/consume-points', consumePoints);
+// 子供専用API (家族への参加、ゲーム時間の消費)
+router.post('/join-family', requireChildRole, joinFamily);
+router.post('/consume-points', requireChildRole, consumePoints);
+
+// 家族全員が実行可能なAPI (プロフィール更新)
 router.put('/profile', updateProfile);
 
 export default router;
