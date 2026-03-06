@@ -1,130 +1,413 @@
-# 🚀 QuestLogic API 連携ガイドライン (v1.0)
+# QuestLogic API 連携ガイドライン (v2.0)
 
-バックエンドAPIの本番環境構築が完了しました。
-このドキュメントは、フロントエンドおよびモバイルアプリ開発チームが `QuestLogic API` をスムーズに利用するためのガイドラインです。
+このドキュメントは、2026年3月6日時点の実装コードを基準に整理した API ガイドです。  
+旧版のような予定仕様ではなく、`backend/src` と `frontend/src` で実際に使われている内容を優先しています。
 
-## 1. 基本情報 (Base Information)
+## 1. ベース情報
 
-* **Base URL (本番環境):** `https://QL-api.adcsvmc.net/api`
-* **API テストポータル (動作確認用):** `https://QL-api.adcsvmc.net/dev/test.html`
-  *(※ Basic認証: ID `admin` / PW `Quest2404`)*
-* **認証方式 (JWT):**
-  APIリクエストの際は、HTTPヘッダーに必ず以下のフォーマットでトークンを含めてください。
-  `Authorization: Bearer <取得したJWTトークン>`
+- 本番オリジン: `https://QL-api.adcsvmc.net`
+- API プレフィックス: `/api`
+- API ルート: `https://QL-api.adcsvmc.net/api`
+- 開発テストポータル: `https://QL-api.adcsvmc.net/dev/test.html`
+- テストポータル Basic 認証: ID `admin` / PW `Quest2404`
 
----
+### フロントエンド設定の注意
 
-## 2. 共通レスポンスフォーマット
+- `frontend/src/lib/gemini.ts` は `EXPO_PUBLIC_API_BASE_URL` に `/api` を含まない値を想定しています。
+- 例:
+  - モバイルアプリの `.env`: `EXPO_PUBLIC_API_BASE_URL=https://QL-api.adcsvmc.net`
+  - 実際の呼び出し先: `https://QL-api.adcsvmc.net/api/analyze`
 
-APIは原則として以下のJSON形式でレスポンスを返します。通信時のエラーハンドリングに活用してください。
+## 2. 認証
 
-**✅ 成功時 (HTTP 200)**
+JWT が必要な API は以下の形式です。
+
+```http
+Authorization: Bearer <token>
+```
+
+JWT を取得する方法は、現状 2 系統あります。
+
+- 開発用ダミーログイン: `GET /api/test/login/:role`
+- Google ログイン: `POST /api/auth/google`
+
+## 3. レスポンス形式
+
+現実装では、全 API が完全に同じレスポンス形式ではありません。
+
+### 3.1 よくある成功レスポンス
+
 ```json
 {
   "success": true,
-  "data": { ... } // または "message": "成功しました"
+  "message": "..."
 }
 ```
 
-**❌ エラー時 (HTTP 400, 401, 404, 500 など)**
+または
+
 ```json
 {
-  "success": false,
-  "error": "エラーの詳細な理由"
+  "success": true,
+  "data": { "...": "..." }
 }
 ```
 
----
+または、`/api/analyze` のように `success` を持たず、AI の結果 JSON をそのまま返す API もあります。
 
-## 3. API エンドポイント一覧
+### 3.2 よくあるエラーレスポンス
 
-### 🔑 3-1. 認証・テスト (Auth)
-*(※ 現在は開発用のダミーログインエンドポイントを使用しています。)*
+```json
+{
+  "error": "エラー内容"
+}
+```
 
-* **GET `/test/login/:role`**
-  * **概要:** 開発用のログイン処理を行い、JWTトークンを取得します。
-  * **Path Parameter:** `role` (`child` または `parent`)
-  * **レスポンス例:**
-    ```json
-    { "success": true, "token": "eyJhb...", "user": { "id": "...", "role": "CHILD" } }
-    ```
-  * **実装時の注意:** 取得した `token` をアプリ内のローカルストレージ(AsyncStorage等)に保存し、以降の通信ヘッダーで使用してください。
+`success: false` は現実装では基本的に返していません。  
+フロント側では `success` の有無だけでなく HTTP ステータスと `error` を見る前提で実装してください。
 
-### 👨‍👩‍👧 3-2. ユーザー＆家族管理 (Users & Family)
+## 4. プロジェクト内で実際に使われている API
 
-* **PUT `/users/profile`**
-  * **概要:** ユーザーのプロフィール（学年・得意なこと）を更新します。
-  * **権限:** 全員 (Child / Parent)
-  * **Body (JSON):**
-    ```json
-    { "grade": "小1", "specialty": "算数" }
-    ```
+### 4.1 モバイルフロントエンドが現在使用中
 
-* **GET `/users/invite-code`**
-  * **概要:** 自分の家族に子供を招待するための「6桁の招待コード」を取得します。
-  * **権限:** 親 (Parent) のみ
+#### POST `/api/analyze`
 
-* **POST `/users/join-family`**
-  * **概要:** 親から共有された招待コードを入力し、家族連携を行います。
-  * **権限:** 子供 (Child) のみ
-  * **Body (JSON):**
-    ```json
-    { "inviteCode": "a1b2c3" }
-    ```
+- 用途: Before / After 画像を Gemini で分析する
+- 認証: 不要
+- Content-Type: `multipart/form-data`
+- Body:
+  - `beforeImage`: File
+  - `afterImage`: File
+  - `metadata`: JSON 文字列
 
-### ⚔️ 3-3. クエスト機能 (Quest - コアゲームループ)
+```json
+{
+  "subject": "算数",
+  "topic": "計算",
+  "parent_focus": "途中式"
+}
+```
 
-* **POST `/quests/submit`**
-  * **概要:** 勉強のBefore/After画像を送信し、AIによる分析と経験値(EXP)・ゲーム時間の獲得を行います。
-  * **権限:** 子供 (Child) のみ
-  * **Content-Type:** `multipart/form-data` (※JSONではありません)
-  * **Body (FormData):**
-    * `beforeImage`: (File) 勉強前の画像
-    * `afterImage`: (File) 勉強後の画像
-    * `childId`: (String) 子供のユーザーID
-    * `familyId`: (String) 家族のID
-  * **レスポンスの注目ポイント:**
-    * `isLevelUp` (boolean): `true` の場合、レベルアップ演出（ポップアップ等）を画面に出してください。
-    * `newLevel` (number): 上がった後の新しいレベル。
-    * `data.aiResult`: AIからの評価星数(`score_breakdown`)や先生のコメント(`feedback_to_child`)が含まれます。
+- レスポンス: AI 分析結果を JSON でそのまま返却
 
-* **POST `/quests/:id/bonus`**
-  * **概要:** 提出されたクエストに対し、親が追加のボーナスゲーム時間を与えます。
-  * **権限:** 親 (Parent) のみ
-  * **Path Parameter:** `id` (クエストID)
-  * **Body (JSON):**
-    ```json
-    { "bonusPoints": 10 }
-    ```
+```json
+{
+  "summary": "全体の要約",
+  "score_breakdown": {
+    "volume": 8,
+    "process": 9,
+    "carefulness": 7,
+    "review": 6
+  },
+  "total_score": 81,
+  "features": [
+    {
+      "type": "特徴種別",
+      "location": "場所",
+      "description": "詳細説明"
+    }
+  ],
+  "suspicion_flag": false,
+  "suspicion_reason": null,
+  "feedback_to_child": "子供向けメッセージ",
+  "feedback_to_parent": "親向けメッセージ"
+}
+```
 
-### 🎮 3-4. 報酬の消費 (Rewards)
+- 使用箇所: `frontend/src/lib/gemini.ts`
 
-* **POST `/users/consume-points`**
-  * **概要:** 獲得したゲーム時間を消費します。（スマホのロック解除などに連動して呼び出してください）
-  * **権限:** 子供 (Child) のみ
-  * **Body (JSON):**
-    ```json
-    { "minutes": 15 }
-    ```
+### 4.2 開発テストポータルが現在使用中
 
----
+以下は `backend/src/public/test.html` から利用されています。
 
-## 4. フロントエンド実装推奨フロー
+#### GET `/api/test/login/:role`
 
-アプリのコアとなるユーザー体験(UX)フローは、以下の順序で実装することを推奨します。
+- 用途: 開発用ダミーログイン
+- 認証: 不要
+- Path Parameter:
+  - `role`: `child` または `parent`
+- 備考:
+  - `parent` のときは `PARENT`
+  - それ以外は `CHILD`
+- レスポンス例:
 
-1. **初期ログイン:** `/test/login/child` または `parent` を叩き、トークンを保存。
-2. **家族連携:**
-   * 親画面：`/users/invite-code` でコードを表示。
-   * 子供画面：入力フォームを作り、`/users/join-family` でコードを送信。
-3. **プロフィール登録:** `/users/profile` で学年(`小1`〜`高3`)と得意なことを登録。
-4. **宿題提出（メイン機能）:** カメラを起動して2枚の写真を撮影し、`FormData`として `/quests/submit` へ送信。
-5. **結果表示:** レスポンスの `isLevelUp` をチェックし、アニメーション分岐。AIの評価結果を星（★）でUIに反映。
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOi...",
+  "user": {
+    "id": "user_id",
+    "name": "テスト生徒",
+    "role": "CHILD",
+    "familyId": "family_id",
+    "level": 1,
+    "exp": 0,
+    "currentPoints": 0,
+    "grade": null,
+    "specialty": null
+  }
+}
+```
 
----
+#### PUT `/api/users/profile`
 
-## 5. 開発時の注意事項・お願い ⚠️
+- 用途: プロフィール更新
+- 認証: JWT 必須
+- 権限意図: Child / Parent
+- Body:
 
-* **CORSについて:** 現在は全てのドメインからの通信を許可(`origin: '*'`)しています。ローカル開発環境(localhost)から直接APIを叩いてもCORSエラーは発生しません。
-* **画像アップロードのタイムアウト:** Gemini AIの分析に数秒〜十数秒かかる場合があります。フロントエンド側（axiosやfetch等）の**リクエストタイムアウト設定を30秒以上（推奨60秒）**に設定し、通信中は「AI分析中...」のようなローディングスピナー(Lottie等)を必ず表示してください。
-* **不明点がある場合:** APIの挙動がおかしい、または欲しいデータの形が違う場合は、バックエンド担当までいつでも気軽にご相談ください！
+```json
+{
+  "grade": "小1",
+  "specialty": "算数"
+}
+```
+
+- 追加で `name`, `avatarUrl` も更新可能
+- レスポンス例:
+
+```json
+{
+  "success": true,
+  "message": "プロフィールを更新しました。",
+  "data": {
+    "id": "user_id",
+    "grade": "小1",
+    "specialty": "算数"
+  }
+}
+```
+
+#### GET `/api/users/invite-code`
+
+- 用途: 家族の招待コード取得
+- 認証: JWT 必須
+- 実装上の権限: Parent のみ
+- レスポンス例:
+
+```json
+{
+  "success": true,
+  "inviteCode": "a1b2c3"
+}
+```
+
+#### POST `/api/users/join-family`
+
+- 用途: 招待コードで家族連携
+- 認証: JWT 必須
+- 仕様意図: Child 向け
+- Body:
+
+```json
+{
+  "inviteCode": "a1b2c3"
+}
+```
+
+- レスポンス例:
+
+```json
+{
+  "success": true,
+  "message": "テスト用ファミリー に参加しました！",
+  "data": {
+    "id": "user_id",
+    "familyId": "family_id"
+  }
+}
+```
+
+#### POST `/api/quests/submit`
+
+- 用途: クエスト提出と AI 分析、経験値とポイント付与
+- 認証: JWT 必須
+- 仕様意図: Child 向け
+- Content-Type: `multipart/form-data`
+- Body:
+  - `beforeImage`: File
+  - `afterImage`: File
+  - `childId`: String
+  - `familyId`: String
+  - `subject`: String 任意
+  - `topic`: String 任意
+  - `parentFocus`: String 任意
+
+- レスポンス例:
+
+```json
+{
+  "success": true,
+  "message": "レベルアップしました！ Lv.2",
+  "isLevelUp": true,
+  "newLevel": 2,
+  "data": {
+    "id": "quest_id",
+    "childId": "user_id",
+    "familyId": "family_id",
+    "status": "COMPLETED",
+    "earnedPoints": 32,
+    "aiResult": {
+      "score_breakdown": {
+        "volume": 8,
+        "process": 9,
+        "carefulness": 7,
+        "review": 6
+      },
+      "total_score": 81,
+      "feedback_to_child": "よく頑張ったね"
+    }
+  }
+}
+```
+
+#### POST `/api/quests/:id/bonus`
+
+- 用途: 親が追加ボーナスを付与
+- 認証: JWT 必須
+- 実装上の権限: Parent のみ
+- Body:
+
+```json
+{
+  "bonusPoints": 10
+}
+```
+
+- レスポンス例:
+
+```json
+{
+  "success": true,
+  "message": "子供に 10 分の追加ボーナスを付与しました！",
+  "data": {
+    "id": "quest_id",
+    "earnedPoints": 42
+  }
+}
+```
+
+#### POST `/api/users/consume-points`
+
+- 用途: ゲーム時間の消費
+- 認証: JWT 必須
+- 仕様意図: Child 向け
+- Body:
+
+```json
+{
+  "minutes": 15
+}
+```
+
+- レスポンス例:
+
+```json
+{
+  "success": true,
+  "message": "15分 のロックを解除しました。",
+  "currentPoints": 25
+}
+```
+
+## 5. 実装済みだが、現行フロントでは未使用の公開 API
+
+### POST `/api/auth/google`
+
+- 用途: Google の `idToken` を検証して JWT を発行
+- 認証: 不要
+- Body:
+
+```json
+{
+  "idToken": "google_id_token",
+  "role": "CHILD"
+}
+```
+
+- レスポンス例:
+
+```json
+{
+  "success": true,
+  "message": "ログインに成功しました。",
+  "token": "eyJhbGciOi...",
+  "user": {
+    "id": "user_id",
+    "name": "ユーザー名",
+    "role": "CHILD",
+    "avatarUrl": "https://...",
+    "familyId": "family_id"
+  }
+}
+```
+
+### GET `/api/quests`
+
+- 用途: 家族のクエスト一覧取得
+- 認証: JWT 必須
+- 権限意図: Child / Parent
+- レスポンス例:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "quest_id",
+      "familyId": "family_id",
+      "status": "COMPLETED",
+      "earnedPoints": 32,
+      "child": {
+        "name": "テスト生徒",
+        "avatarUrl": null
+      }
+    }
+  ]
+}
+```
+
+### GET `/api/health`
+
+- 用途: ヘルスチェック
+- 認証: 不要
+- レスポンス例:
+
+```json
+{
+  "success": true,
+  "message": "QuestLogic API稼働中",
+  "ai": {
+    "configured": true,
+    "provider": "gemini"
+  }
+}
+```
+
+## 6. 現時点で API として未公開のもの
+
+- `getQuestById` はコントローラ実装がありますが、ルート未接続のため公開 API ではありません。
+- 旧設計書にあった以下の API は、現リポジトリでは未実装です。
+  - `POST /api/user/parent/signup`
+  - `POST /api/family/child`
+  - `POST /api/auth/child/login`
+  - `GET /api/family/members`
+  - `POST /api/quest/start`
+  - `POST /api/quest/finish`
+  - `GET /api/quest/:id`
+  - `GET /api/quest/list`
+  - `POST /api/family/settings`
+  - `POST /api/quest/approve`
+  - `POST /api/quest/reject`
+  - `POST /api/quest/correct`
+  - `GET /api/energy/balance`
+  - `POST /api/device/unlock`
+  - `POST /api/device/status`
+
+## 7. フロントエンド実装上の注意
+
+- `/api/analyze` は `success` ラッパーがなく、AI 結果 JSON を直接返します。
+- `/api/users/invite-code` は `data.inviteCode` ではなくトップレベルの `inviteCode` を返します。
+- `/api/users/consume-points` は `data.currentPoints` ではなくトップレベルの `currentPoints` を返します。
+- `/api/test/login/:role` の返却 `user` には、DB に存在するプロフィール項目がそのまま入ります。
+- 画像分析は数秒から十数秒かかることがあるため、クライアント側タイムアウトは 30 秒以上を推奨します。
