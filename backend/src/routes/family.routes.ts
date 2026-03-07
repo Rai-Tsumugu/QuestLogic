@@ -1,9 +1,7 @@
-// src/routes/family.routes.ts
-
 import { Router } from 'express';
 import { 
     getFamilySettings, updateFamilySettings,
-    getGameStatus, toggleForceLock,
+    getGameStatus, toggleForceLock, extendTime, 
     getAISettings, updateAISettings, getDevices
 } from '../controllers/family.controller';
 import { authenticateJWT, requireParentRole } from '../middlewares/auth.middleware';
@@ -11,19 +9,21 @@ import { authenticateJWT, requireParentRole } from '../middlewares/auth.middlewa
 const router = Router();
 router.use(authenticateJWT);
 
-// API
+// 1. 基本設定
 router.get('/settings', requireParentRole, getFamilySettings);
 router.put('/settings', requireParentRole, updateFamilySettings);
 
-// 依頼1: ゲーム管理
+// 2. ゲーム管理 (依頼内容 TASK-07)
+// 注意: フロントエンド要望の /:familyId/game-status はセキュリティのため /game-status に変更
 router.get('/game-status', requireParentRole, getGameStatus);
 router.post('/lock', requireParentRole, toggleForceLock);
+router.post('/extend-time', requireParentRole, extendTime); // 新規追加
 
-// 依頼4: AI設定
+// 3. AI設定
 router.get('/settings/ai', requireParentRole, getAISettings);
 router.patch('/settings/ai', requireParentRole, updateAISettings);
 
-// 依頼5: デバイス管理
+// 4. デバイス管理
 router.get('/devices', requireParentRole, getDevices);
 
 export default router;
