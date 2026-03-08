@@ -260,6 +260,9 @@
             formData.append('childId', currentUser.id);
             formData.append('familyId', currentUser.familyId);
 
+            formData.append('userName', 'testUser');
+            formData.append('topic', 'testTopic');
+
             document.getElementById('submitBtn').textContent = "AI分析中...";
             document.getElementById('submitBtn').disabled = true;
             document.getElementById('resultCard').style.display = 'none';

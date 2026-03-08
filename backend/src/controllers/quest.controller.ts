@@ -3,10 +3,9 @@ import { prisma } from '../app';
 import fs from 'fs';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// Gemini APIの初期化 (環境変数からAPIキーを取得)
+// Gemini APIの初期化
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-// 画像ファイルをGeminiが読み込める形式に変換するヘルパー関数
 function fileToGenerativePart(filePath: string, mimeType: string) {
     return {
         inlineData: {
@@ -24,18 +23,17 @@ export const getQuests = async (req: Request, res: Response) => {
 
         const quests = await prisma.quest.findMany({
             where: { familyId },
-            // 【修正】依頼2, 3の要件に合わせて取得フィールドを明示的に指定
             select: {
                 id: true,
                 familyId: true,
                 status: true,
                 earnedPoints: true,
-                createdAt: true, // 依頼3: createdAt の追加
-                beforeImageUrl: true, // 依頼2: 画像URLの追加
-                afterImageUrl: true,  // 依頼2: 画像URLの追加
-                subject: true,        // 依頼2: 教科の追加
-                // topic は既存スキーマにない場合は subject で代用するか、スキーマ追加が必要です
-                aiResult: true, // 依頼3: aiResult (feedback_to_parent含む) はJSONとして丸ごと返却
+                createdAt: true,
+                beforeImageUrl: true,
+                afterImageUrl: true,
+                subject: true,
+                topic: true,
+                aiResult: true,
                 child: {
                     select: { name: true, avatarUrl: true }
                 }
@@ -112,11 +110,14 @@ export const submitQuest = async (req: Request, res: Response) => {
         const afterImageFile = files.afterImage[0];
         const subject = req.body.subject || '未設定';
         const topic = req.body.topic || '未設定';
+        const userName = req.body.userName || 'お子様';
 
         // 1. Gemini APIによる画像分析
         const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
         
+        // プロンプトの修正: userNameを組み込んでパーソナライズ
         const prompt = `あなたはプロの家庭教師です。以下の「勉強前」と「勉強後」の画像を比較し、子供の学習成果を評価してください。
+        子供の名前は「${userName}」です。
         教科は「${subject}」、トピックは「${topic}」です。
         必ず以下のJSONフォーマットのみを絶対に出力してください。マークダウン( \`\`\`json 等 )は一切含めないでください。
         {
@@ -133,21 +134,17 @@ export const submitQuest = async (req: Request, res: Response) => {
           ],
           "suspicion_flag": false,
           "suspicion_reason": null,
-          "feedback_to_child": "子供への優しいメッセージ",
+          "feedback_to_child": "${userName}さんへ、のように必ず名前を呼んでから優しく書き出すメッセージ",
           "feedback_to_parent": "親へのメッセージ"
         }`;
 
         const beforePart = fileToGenerativePart(beforeImageFile.path, beforeImageFile.mimetype);
         const afterPart = fileToGenerativePart(afterImageFile.path, afterImageFile.mimetype);
 
-        // Geminiにリクエスト送信
         const result = await model.generateContent([prompt, beforePart, afterPart]);
         let responseText = result.response.text();
-        
-        // Geminiがマークダウン付きで返してきた場合の除去処理
         responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
         
-        // JSONパース
         let aiResultData;
         try {
             aiResultData = JSON.parse(responseText);
@@ -163,11 +160,9 @@ export const submitQuest = async (req: Request, res: Response) => {
         const family = await prisma.family.findUnique({ where: { id: familyId } });
         const minutesPerPoint = family?.minutesPerPoint || 2;
 
-        // ルール: 合計スコア(100点満点)を5で割った数値をポイントとする (例: 80点 -> 16ポイント)
         const earnedPoints = Math.floor((aiResultData.total_score || 0) / 5);
         const earnedMinutes = earnedPoints * minutesPerPoint;
         
-        // ルール: 100 EXPごとに1レベルアップ
         const currentExp = user.exp || 0;
         const earnedExp = aiResultData.total_score || 0;
         const newExp = currentExp + earnedExp;
@@ -183,6 +178,7 @@ export const submitQuest = async (req: Request, res: Response) => {
                 status: 'COMPLETED',
                 earnedPoints,
                 subject,
+                topic,
                 beforeImageUrl: beforeImageFile.path,
                 afterImageUrl: afterImageFile.path,
                 aiResult: aiResultData as any
