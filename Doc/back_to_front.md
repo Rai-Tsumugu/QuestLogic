@@ -1,7 +1,104 @@
-# QuestLogic API 連携ガイドライン (v3.0)
+# QuestLogic API 連携ガイドライン (v3.1)
 
 このドキュメントは、現時点の `backend/src` 実装を基準に整理した API ガイドです。  
-v2.0 からの主な更新点は、`family` 系 API の追加、`/api/analyze` の認証要件変更、`/api/test/login/:role` の Basic 認証必須化、`quests` / `users` 系レスポンスの変更です。
+v3.1 では、フロントエンド要望に挙がっていた `family` / `quests` / `settings` / `devices` 系 API の実装有無を再監査し、実パス・実レスポンス・未実装項目・Prisma スキーマ不整合の注意点を追記しました。
+
+## v3.1 監査メモ (2026-03-08)
+
+今回の監査は以下を根拠に行っています。
+
+- `backend/src/routes/*.ts`
+- `backend/src/controllers/*.ts`
+- 生成済み Prisma schema: `backend/node_modules/.prisma/client/schema.prisma`
+- `backend` ディレクトリでの `npm run build`
+
+重要な注意:
+
+- 現在の `backend` は `npm run build` が失敗します。
+- 失敗理由は、コントローラーが参照している Prisma フィールド / モデルと、生成済み Prisma Client の型が一致していないためです。
+- 特に `Family.minutesPerPoint`, `Family.isForceLocked`, `Family.aiSettings`, `Device`, `Quest.createdAt` の不整合が確認されました。
+- そのため以下の判定では、「ルーター定義があるか」と「現行 Prisma スキーマで成立しているか」を分けて読んでください。
+
+### グループA: ゲーム状態管理
+
+- `GET /api/family/:familyId/game-status`
+  - 判定: 指定 URL は未実装
+  - 代替実装: `GET /api/family/game-status`
+  - 認証: `Authorization: Bearer <token>` 必須 + Parent のみ
+  - 実レスポンス: `success`, `gameRemainingMinutes`, `smartphoneRemainingMinutes`, `isForceLocked`
+  - 備考: `familyId` は URL パラメータではなく JWT から取得する設計です。`family.routes.ts` にも、`:familyId` 版はセキュリティ上の理由で公開しない旨のコメントがあります。
+  - 実装予定: `:familyId` 版を追加する明示的な記述は見当たりません。エイリアス追加だけなら 0.5 日、`familyId` 一致検証とテスト込みなら 1 日程度です。
+- `POST /api/family/:familyId/lock`
+  - 判定: 指定 URL は未実装
+  - 代替実装: `POST /api/family/lock`
+  - 認証: `Authorization: Bearer <token>` 必須 + Parent のみ
+  - 実リクエスト: Body は `locked: boolean`
+  - 実レスポンス: `success`, `locked`
+  - 実装予定: `:familyId` 版追加の記述は見当たりません。工数は 0.5 日から 1 日程度です。
+- `POST /api/family/:familyId/extend-time`
+  - 判定: 指定 URL は未実装
+  - 代替実装: `POST /api/family/extend-time`
+  - 認証: `Authorization: Bearer <token>` 必須 + Parent のみ
+  - 実リクエスト: Body は `minutes: number`
+  - 実レスポンス: `success`, `newGameRemainingMinutes`, `newSmartphoneRemainingMinutes`
+  - 実装予定: `:familyId` 版追加の記述は見当たりません。工数は 0.5 日から 1 日程度です。
+- グループA 共通の注意:
+  - ルーター / コントローラー上は実装があります。
+  - ただし現行 Prisma Client には `minutesPerPoint` / `isForceLocked` が無く、`npm run build` は失敗します。デプロイ済み環境で別 schema を使っている可能性はありますが、現リポジトリだけを見る限り動作保証はできません。
+
+### グループB: クエスト詳細情報
+
+- `GET /api/quests`
+  - 判定: 実装あり
+  - 認証: `Authorization: Bearer <token>` 必須。Parent / Child とも利用可能
+  - 実レスポンスに含まれるもの:
+    - `beforeImageUrl`
+    - `afterImageUrl`
+    - `subject`
+    - `createdAt`
+    - `aiResult`
+    - `child.name`
+    - `child.avatarUrl`
+  - `aiResult.feedback_to_parent` について:
+    - `aiResult` は JSON を丸ごと返す実装です。
+    - そのため保存済み JSON に `feedback_to_parent` があれば、そのままスネークケースで返ります。
+  - 含まれないもの:
+    - `topic` は `getQuests` の `select` に入っていないため返りません。
+  - Prisma 注意:
+    - コントローラーは `createdAt` を返す前提ですが、生成済み Prisma schema の `Quest` には `createdAt` が無く `startedAt` / `finishedAt` です。
+    - 逆に生成済み schema には `topic` があるのに、`getQuests` は返していません。
+    - この不整合のため、現リポジトリでは `npm run build` が失敗します。
+- `GET /api/quests/:id`
+  - 判定: 未実装
+  - 実装予定: 明示的な予定は見当たりません
+  - 工数見込み:
+    - 既存一覧 API を流用して家族所属チェックを付けるだけなら 0.5 日から 1 日
+    - Prisma schema / migration / 型再生成まで合わせるなら 1 日から 1.5 日
+
+### グループC: 設定・デバイス管理
+
+- `GET /api/settings/ai`
+  - 判定: 指定 URL は未実装
+  - 代替実装: `GET /api/family/settings/ai`
+  - 認証: `Authorization: Bearer <token>` 必須 + Parent のみ
+  - 実レスポンス: `success`, `data.strictness`, `data.focus`, `data.ng.missingProcess`, `data.ng.workTimeMismatch`, `data.ng.imageReuse`
+  - 実装予定: `/api/settings/ai` 直下に切り出す計画は確認できません。エイリアス追加は 0.5 日程度です。
+- `PATCH /api/settings/ai`
+  - 判定: 指定 URL は未実装
+  - 代替実装: `PATCH /api/family/settings/ai`
+  - 認証: `Authorization: Bearer <token>` 必須 + Parent のみ
+  - 実リクエスト: AI 設定の部分更新
+  - 実レスポンス: `success`, `data`
+  - 実装予定: `/api/settings/ai` 直下に切り出す計画は確認できません。エイリアス追加は 0.5 日程度です。
+- `GET /api/family/:familyId/devices`
+  - 判定: 指定 URL は未実装
+  - 代替実装: `GET /api/family/devices`
+  - 認証: `Authorization: Bearer <token>` 必須 + Parent のみ
+  - 実レスポンス: `success`, `data: [{ id, name }]`
+  - 実装予定: `:familyId` 版追加の記述は見当たりません。工数は 0.5 日から 1 日程度です。
+- グループC 共通の注意:
+  - `family.controller.ts` には実装があります。
+  - ただし生成済み Prisma schema には `aiSettings` も `Device` モデルも存在せず、ここも `npm run build` 失敗箇所です。
 
 ## 1. ベース情報
 
@@ -373,6 +470,11 @@ PW: Quest2404
 
 - 用途: 家族のクエスト一覧取得
 - 権限: Child / Parent
+- 備考:
+  - 実装済みなのは一覧 API のみで、`GET /api/quests/:id` は未公開です。
+  - `topic` は現在の一覧レスポンスに含まれません。
+  - `aiResult` は JSON を丸ごと返すため、`feedback_to_parent` は内部キーのスネークケースのまま返ります。
+  - コントローラーは `createdAt` を返す前提ですが、現リポジトリの生成済み Prisma Client とは不整合があります。
 - レスポンス例:
 
 ```json
@@ -403,6 +505,9 @@ PW: Quest2404
 ### 4.6 Family API
 
 以下はすべて JWT 必須です。
+
+フロントエンド要望にあった `/:familyId/...` や `/api/settings/ai` 直下の URL は公開されていません。  
+現実装で公開されているのは、以下の `/api/family/...` ルートです。
 
 #### GET `/api/family/settings`
 
@@ -447,6 +552,9 @@ PW: Quest2404
 
 - 用途: 家族内の子供ポイント合計から残りゲーム時間を取得
 - 権限: Parent のみ
+- 備考:
+  - 要望にあった `GET /api/family/:familyId/game-status` ではなく、この URL が実装されています。
+  - `familyId` は URL パラメータではなく JWT から取得します。
 - レスポンス例:
 
 ```json
@@ -462,6 +570,8 @@ PW: Quest2404
 
 - 用途: 強制ロック / 解除
 - 権限: Parent のみ
+- 備考:
+  - 要望にあった `POST /api/family/:familyId/lock` ではなく、この URL が実装されています。
 - Body:
 
 ```json
@@ -483,6 +593,8 @@ PW: Quest2404
 
 - 用途: AI 設定取得
 - 権限: Parent のみ
+- 備考:
+  - 要望にあった `GET /api/settings/ai` は未公開で、実装済みなのはこの URL です。
 - レスポンス例:
 
 ```json
@@ -504,6 +616,8 @@ PW: Quest2404
 
 - 用途: AI 設定部分更新
 - 権限: Parent のみ
+- 備考:
+  - 要望にあった `PATCH /api/settings/ai` は未公開で、実装済みなのはこの URL です。
 - Body 例:
 
 ```json
@@ -536,6 +650,8 @@ PW: Quest2404
 
 - 用途: デバイス一覧取得
 - 権限: Parent のみ
+- 備考:
+  - 要望にあった `GET /api/family/:familyId/devices` ではなく、この URL が実装されています。
 - レスポンス例:
 
 ```json
@@ -565,14 +681,18 @@ PW: Quest2404
 
 ## 6. フロントエンド実装上の注意
 
-- 現在の `frontend/src/lib/gemini.ts` は `/api/analyze` 呼び出し時に JWT を付けていません。v3.0 のバックエンド仕様に合わせるには `Authorization` ヘッダー追加が必要です。
+- 現在の `frontend/src/lib/gemini.ts` は `/api/analyze` 呼び出し時に JWT を付けていません。v3.1 のバックエンド仕様に合わせるには `Authorization` ヘッダー追加が必要です。
 - `backend/src/public/test.html` は `quests/submit` に `childId` と `familyId` をまだ送っていますが、バックエンド側では現在それらを参照していません。
 - `consume-points` を呼ぶクライアントは、`minutes` ではなく `consumePoints` を送ってください。
 - `family/settings` の `minutesPerPoint` は 1〜60 の整数制約があります。
+- `family` 系の実装済み URL は `/:familyId/...` ではなく、JWT の `familyId` を使う `/api/family/...` 形式です。
+- `GET /api/quests` では `topic` は返らず、個別取得用の `GET /api/quests/:id` も未実装です。
+- `PATCH /api/family/settings/ai` は Express ルーター上は存在しますが、`app.ts` の CORS `methods` に `PATCH` が含まれていないため、別オリジンのブラウザ実行では preflight 失敗の可能性があります。
+- 現在のリポジトリでは Prisma schema とコントローラーの不整合により `npm run build` が失敗します。動作確認前に schema / migration / `prisma generate` の同期が必要です。
 
-## 7. 未公開 / 未実装の旧設計 API
+## 7. 未公開 / 未実装 API
 
-旧設計書にあった以下の API は、現リポジトリでは未実装です。
+旧設計書またはフロントエンド要望にあった以下の API / URL は、現リポジトリでは未実装です。
 
 - `POST /api/user/parent/signup`
 - `POST /api/family/child`
@@ -582,6 +702,13 @@ PW: Quest2404
 - `POST /api/quest/finish`
 - `GET /api/quest/:id`
 - `GET /api/quest/list`
+- `GET /api/quests/:id`
+- `GET /api/family/:familyId/game-status` は未公開で、実装済みなのは `GET /api/family/game-status`
+- `POST /api/family/:familyId/lock` は未公開で、実装済みなのは `POST /api/family/lock`
+- `POST /api/family/:familyId/extend-time` は未公開で、実装済みなのは `POST /api/family/extend-time`
+- `GET /api/settings/ai` は未公開で、実装済みなのは `GET /api/family/settings/ai`
+- `PATCH /api/settings/ai` は未公開で、実装済みなのは `PATCH /api/family/settings/ai`
+- `GET /api/family/:familyId/devices` は未公開で、実装済みなのは `GET /api/family/devices`
 - `POST /api/family/settings` は未実装で、実装済みなのは `PUT /api/family/settings`
 - `POST /api/quest/approve`
 - `POST /api/quest/reject`
