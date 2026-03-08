@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { 
     getFamilySettings, updateFamilySettings,
     getGameStatus, toggleForceLock, extendTime, 
-    getAISettings, updateAISettings, getDevices
+    getAISettings, updateAISettings, getDevices,
+    addDevice, deleteDevice
 } from '../controllers/family.controller';
 import { authenticateJWT, requireParentRole } from '../middlewares/auth.middleware';
 
@@ -25,5 +26,7 @@ router.patch('/settings/ai', requireParentRole, updateAISettings);
 
 // 4. デバイス管理
 router.get('/devices', requireParentRole, getDevices);
+router.post('/devices', requireParentRole, addDevice); 
+router.delete('/devices/:id', requireParentRole, deleteDevice); 
 
 export default router;

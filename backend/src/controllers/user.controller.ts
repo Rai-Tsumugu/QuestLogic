@@ -123,3 +123,31 @@ export const getInviteCode = async (req: Request, res: Response) => {
         return res.status(500).json({ error: 'サーバーエラーが発生しました。' });
     }
 };
+
+export const getMe = async (req: Request, res: Response) => {
+    try {
+        const userId = req.user.userId;
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                name: true,
+                role: true,
+                level: true,
+                exp: true,
+                currentPoints: true,
+                grade: true,
+                specialty: true,
+                avatarUrl: true,
+                familyId: true
+            }
+        });
+
+        if (!user) return res.status(404).json({ error: 'ユーザーが見つかりません。' });
+        
+        return res.status(200).json({ success: true, data: user });
+    } catch (error) {
+        console.error('ユーザー情報取得エラー:', error);
+        return res.status(500).json({ error: 'サーバーエラーが発生しました。' });
+    }
+};

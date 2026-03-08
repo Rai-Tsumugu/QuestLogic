@@ -19,12 +19,14 @@ export const getGameStatus = async (req: Request, res: Response) => {
         // 子供全員のポイントを合算して表示（個別管理が必要な場合は要件定義変更が必要）
         const totalChildPoints = family.users.reduce((sum, child) => sum + child.currentPoints, 0);
         const gameRemainingMinutes = totalChildPoints * family.minutesPerPoint;
+        const childName = family.users.length > 0 ? family.users[0].name : 'お子様';
 
         return res.status(200).json({
             success: true,
             gameRemainingMinutes: gameRemainingMinutes,
             smartphoneRemainingMinutes: gameRemainingMinutes, // 現在はゲームとスマホ時間を同一として扱う
-            isForceLocked: family.isForceLocked
+            isForceLocked: family.isForceLocked,
+            childName: childName
         });
     } catch (error) {
         console.error('ゲーム状態取得エラー:', error);
@@ -193,6 +195,44 @@ export const getDevices = async (req: Request, res: Response) => {
             select: { id: true, name: true }
         });
         return res.status(200).json({ success: true, data: devices });
+    } catch (error) {
+        return res.status(500).json({ error: 'サーバーエラー' });
+    }
+};
+
+// 【新規】 5-B. デバイスの追加 (これでモックデータが不要になります！)
+export const addDevice = async (req: Request, res: Response) => {
+    try {
+        const familyId = req.user.familyId;
+        const { name } = req.body;
+
+        if (!name || typeof name !== 'string') {
+            return res.status(400).json({ error: 'デバイス名を正しく入力してください。' });
+        }
+
+        const newDevice = await prisma.device.create({
+            data: { name, familyId }
+        });
+
+        return res.status(200).json({ success: true, data: newDevice });
+    } catch (error) {
+        return res.status(500).json({ error: 'サーバーエラー' });
+    }
+};
+
+// 【新規】 5-C. デバイスの削除
+export const deleteDevice = async (req: Request, res: Response) => {
+    try {
+        const familyId = req.user.familyId;
+        const deviceId = req.params.id;
+
+        const device = await prisma.device.findUnique({ where: { id: deviceId } });
+        if (!device || device.familyId !== familyId) {
+            return res.status(404).json({ error: '指定されたデバイスが見つかりません。' });
+        }
+
+        await prisma.device.delete({ where: { id: deviceId } });
+        return res.status(200).json({ success: true, message: 'デバイスを削除しました。' });
     } catch (error) {
         return res.status(500).json({ error: 'サーバーエラー' });
     }
