@@ -1,154 +1,95 @@
-# QuestLogic API 連携ガイドライン (v3.1)
+# QuestLogic API 連携ガイドライン (v4.0)
 
-このドキュメントは、現時点の `backend/src` 実装を基準に整理した API ガイドです。  
-v3.1 では、フロントエンド要望に挙がっていた `family` / `quests` / `settings` / `devices` 系 API の実装有無を再監査し、実パス・実レスポンス・未実装項目・Prisma スキーマ不整合の注意点を追記しました。
+このドキュメントは、2026-03-08 時点の `backend/src` 実装を基準に、フロントエンドが実際に連携できる API を整理したものです。  
+v4.0 では、`GET /api/users/me` と `POST /api/family/devices` / `DELETE /api/family/devices/:id` の追加を反映し、アプリ内の固定値・モック配列を置き換えるための実運用手順を明記しました。
 
-## v3.1 監査メモ (2026-03-08)
+## 1. 監査対象と結論
 
-今回の監査は以下を根拠に行っています。
+監査対象:
 
+- `backend/src/app.ts`
 - `backend/src/routes/*.ts`
 - `backend/src/controllers/*.ts`
-- 生成済み Prisma schema: `backend/node_modules/.prisma/client/schema.prisma`
+- `backend/src/middlewares/auth.middleware.ts`
+- `backend/src/prisma/schema.prisma`
+- `backend/node_modules/.prisma/client/schema.prisma`
 - `backend` ディレクトリでの `npm run build`
 
-重要な注意:
+結論:
 
-- 現在の `backend` は `npm run build` が失敗します。
-- 失敗理由は、コントローラーが参照している Prisma フィールド / モデルと、生成済み Prisma Client の型が一致していないためです。
-- 特に `Family.minutesPerPoint`, `Family.isForceLocked`, `Family.aiSettings`, `Device`, `Quest.createdAt` の不整合が確認されました。
-- そのため以下の判定では、「ルーター定義があるか」と「現行 Prisma スキーマで成立しているか」を分けて読んでください。
+- ルート定義上、公開 API は合計 22 本あります。
+- 新しく使うべき API は以下です。
+  - `GET /api/users/me`
+  - `POST /api/family/devices`
+  - `DELETE /api/family/devices/:id`
+- `GET /api/family/devices` は固定値ではなく DB 上の実データを返す想定に変わっています。
+- `POST /api/quests/submit` は実際に Gemini 呼び出しと DB 更新を行う実装です。
+- 一方で `POST /api/analyze` はまだ `app.ts` 内のダミー JSON を返す暫定実装です。
+- `backend/src/prisma/schema.prisma` には `minutesPerPoint` / `isForceLocked` / `aiSettings` / `Device` / `Quest.createdAt` が定義されていますが、生成済み Prisma Client が古く、2026-03-08 時点で `npm run build` は失敗します。
+- したがって本ドキュメントは「ルーター / コントローラー実装上の契約」をまとめたものです。ローカルリポジトリ単体では、Prisma Client 再生成前提の箇所があります。
 
-### グループA: ゲーム状態管理
+## 2. v4.0 の更新ポイント
 
-- `GET /api/family/:familyId/game-status`
-  - 判定: 指定 URL は未実装
-  - 代替実装: `GET /api/family/game-status`
-  - 認証: `Authorization: Bearer <token>` 必須 + Parent のみ
-  - 実レスポンス: `success`, `gameRemainingMinutes`, `smartphoneRemainingMinutes`, `isForceLocked`
-  - 備考: `familyId` は URL パラメータではなく JWT から取得する設計です。`family.routes.ts` にも、`:familyId` 版はセキュリティ上の理由で公開しない旨のコメントがあります。
-  - 実装予定: `:familyId` 版を追加する明示的な記述は見当たりません。エイリアス追加だけなら 0.5 日、`familyId` 一致検証とテスト込みなら 1 日程度です。
-- `POST /api/family/:familyId/lock`
-  - 判定: 指定 URL は未実装
-  - 代替実装: `POST /api/family/lock`
-  - 認証: `Authorization: Bearer <token>` 必須 + Parent のみ
-  - 実リクエスト: Body は `locked: boolean`
-  - 実レスポンス: `success`, `locked`
-  - 実装予定: `:familyId` 版追加の記述は見当たりません。工数は 0.5 日から 1 日程度です。
-- `POST /api/family/:familyId/extend-time`
-  - 判定: 指定 URL は未実装
-  - 代替実装: `POST /api/family/extend-time`
-  - 認証: `Authorization: Bearer <token>` 必須 + Parent のみ
-  - 実リクエスト: Body は `minutes: number`
-  - 実レスポンス: `success`, `newGameRemainingMinutes`, `newSmartphoneRemainingMinutes`
-  - 実装予定: `:familyId` 版追加の記述は見当たりません。工数は 0.5 日から 1 日程度です。
-- グループA 共通の注意:
-  - ルーター / コントローラー上は実装があります。
-  - ただし現行 Prisma Client には `minutesPerPoint` / `isForceLocked` が無く、`npm run build` は失敗します。デプロイ済み環境で別 schema を使っている可能性はありますが、現リポジトリだけを見る限り動作保証はできません。
+- `GET /api/users/me` を追加記載
+  - 起動時 / 復帰時に最新の `level`, `exp`, `currentPoints` を同期する用途を明記
+- `POST /api/family/devices` と `DELETE /api/family/devices/:id` を追加記載
+  - デバイスの固定値配列を廃止し、DB の実データ管理に切り替える用途を明記
+- `GET /api/quests` の返却項目を現行コードに合わせて修正
+  - `topic` を含む
+- `GET /api/family/game-status` の返却項目を現行コードに合わせて修正
+  - `childName` を含む
+- 既知の実装注意を更新
+  - `PATCH /api/family/settings/ai` と CORS
+  - Prisma schema と生成済み Client の不整合
+  - `/api/analyze` がまだダミー実装
 
-### グループB: クエスト詳細情報
-
-- `GET /api/quests`
-  - 判定: 実装あり
-  - 認証: `Authorization: Bearer <token>` 必須。Parent / Child とも利用可能
-  - 実レスポンスに含まれるもの:
-    - `beforeImageUrl`
-    - `afterImageUrl`
-    - `subject`
-    - `createdAt`
-    - `aiResult`
-    - `child.name`
-    - `child.avatarUrl`
-  - `aiResult.feedback_to_parent` について:
-    - `aiResult` は JSON を丸ごと返す実装です。
-    - そのため保存済み JSON に `feedback_to_parent` があれば、そのままスネークケースで返ります。
-  - 含まれないもの:
-    - `topic` は `getQuests` の `select` に入っていないため返りません。
-  - Prisma 注意:
-    - コントローラーは `createdAt` を返す前提ですが、生成済み Prisma schema の `Quest` には `createdAt` が無く `startedAt` / `finishedAt` です。
-    - 逆に生成済み schema には `topic` があるのに、`getQuests` は返していません。
-    - この不整合のため、現リポジトリでは `npm run build` が失敗します。
-- `GET /api/quests/:id`
-  - 判定: 未実装
-  - 実装予定: 明示的な予定は見当たりません
-  - 工数見込み:
-    - 既存一覧 API を流用して家族所属チェックを付けるだけなら 0.5 日から 1 日
-    - Prisma schema / migration / 型再生成まで合わせるなら 1 日から 1.5 日
-
-### グループC: 設定・デバイス管理
-
-- `GET /api/settings/ai`
-  - 判定: 指定 URL は未実装
-  - 代替実装: `GET /api/family/settings/ai`
-  - 認証: `Authorization: Bearer <token>` 必須 + Parent のみ
-  - 実レスポンス: `success`, `data.strictness`, `data.focus`, `data.ng.missingProcess`, `data.ng.workTimeMismatch`, `data.ng.imageReuse`
-  - 実装予定: `/api/settings/ai` 直下に切り出す計画は確認できません。エイリアス追加は 0.5 日程度です。
-- `PATCH /api/settings/ai`
-  - 判定: 指定 URL は未実装
-  - 代替実装: `PATCH /api/family/settings/ai`
-  - 認証: `Authorization: Bearer <token>` 必須 + Parent のみ
-  - 実リクエスト: AI 設定の部分更新
-  - 実レスポンス: `success`, `data`
-  - 実装予定: `/api/settings/ai` 直下に切り出す計画は確認できません。エイリアス追加は 0.5 日程度です。
-- `GET /api/family/:familyId/devices`
-  - 判定: 指定 URL は未実装
-  - 代替実装: `GET /api/family/devices`
-  - 認証: `Authorization: Bearer <token>` 必須 + Parent のみ
-  - 実レスポンス: `success`, `data: [{ id, name }]`
-  - 実装予定: `:familyId` 版追加の記述は見当たりません。工数は 0.5 日から 1 日程度です。
-- グループC 共通の注意:
-  - `family.controller.ts` には実装があります。
-  - ただし生成済み Prisma schema には `aiSettings` も `Device` モデルも存在せず、ここも `npm run build` 失敗箇所です。
-
-## 1. ベース情報
+## 3. ベース情報
 
 - 本番オリジン: `https://QL-api.adcsvmc.net`
 - API プレフィックス: `/api`
-- API ルート: `https://QL-api.adcsvmc.net/api`
+- API ベース URL: `https://QL-api.adcsvmc.net/api`
 - 開発テストポータル: `https://QL-api.adcsvmc.net/dev/test.html`
-- テストポータル Basic 認証: ID `admin` / PW `Quest2404`
+- テストポータル Basic 認証:
+  - ID: `admin`
+  - PW: `Quest2404`
 
-### フロントエンド設定の注意
+フロントエンド設定の注意:
 
 - `frontend/src/lib/api.ts` は `EXPO_PUBLIC_API_BASE_URL` に `/api` を含まない値を想定しています。
-- 例:
+- 設定例:
   - `.env`: `EXPO_PUBLIC_API_BASE_URL=https://QL-api.adcsvmc.net`
-  - 実際の API 呼び出し先: `https://QL-api.adcsvmc.net/api/...`
+  - 実際の呼び先: `https://QL-api.adcsvmc.net/api/...`
 
-## 2. 認証
+## 4. 認証と共通仕様
 
-### 2.1 JWT
+### 4.1 JWT
 
-JWT が必要な API は、以下の形式でトークンを送ってください。
+JWT 必須 API では以下の形式で送ります。
 
 ```http
 Authorization: Bearer <token>
 ```
 
-### 2.2 Basic 認証
+JWT ペイロードには少なくとも以下が入る前提です。
 
-以下は Basic 認証が必要です。
-
-- `GET /dev/test.html`
-- `GET /api/test/login/:role`
-
-Basic 認証情報:
-
-```text
-ID: admin
-PW: Quest2404
+```json
+{
+  "userId": "user_id",
+  "role": "PARENT",
+  "familyId": "family_id"
+}
 ```
 
-### 2.3 JWT 取得方法
+### 4.2 Basic 認証
 
-- 開発用ダミーログイン: `GET /api/test/login/:role`
-- Google ログイン: `POST /api/auth/google`
+以下は Basic 認証必須です。
 
-## 3. レスポンス形式
+- `GET /api/test/login/:role`
+- `GET /dev/test.html`
 
-現実装では、全 API が完全に同じ形式ではありません。
+### 4.3 共通レスポンス傾向
 
-### 3.1 一般的な成功レスポンス
+成功レスポンスは完全統一ではありません。主に以下の形です。
 
 ```json
 {
@@ -157,16 +98,14 @@ PW: Quest2404
 }
 ```
 
-または
-
 ```json
 {
   "success": true,
-  "data": { "...": "..." }
+  "data": {}
 }
 ```
 
-### 3.2 一般的なエラーレスポンス
+エラーは主に以下です。
 
 ```json
 {
@@ -174,20 +113,51 @@ PW: Quest2404
 }
 ```
 
-### 3.3 例外
+例外:
 
-- `/api/analyze` は `success` ラッパーなしで JSON を直接返します。
-- 一部 API は `data` ではなく、トップレベルに `inviteCode`, `earnedMinutes`, `remainingPoints` などを返します。
+- `POST /api/analyze` は `success` ラッパーなしで JSON を直接返します。
+- 一部 API は `data` を使わず、`inviteCode`, `earnedPoints`, `remainingPoints` などをトップレベルで返します。
 
-## 4. API 一覧
+### 4.4 CORS 注意
 
-### 4.1 ヘルスチェック
+`app.ts` の CORS 設定は `GET`, `POST`, `PUT`, `DELETE` だけを許可しています。  
+そのため、ブラウザから別オリジンで `PATCH /api/family/settings/ai` を叩くと preflight 失敗の可能性があります。
+
+## 5. 実装済み API 一覧
+
+| Method | Path | 認証 | ロール | 状態 | 備考 |
+| --- | --- | --- | --- | --- | --- |
+| GET | `/api/health` | 不要 | 全員 | 実装あり | ヘルスチェック |
+| GET | `/api/test/login/:role` | Basic | 全員 | 実装あり | 開発用ダミーログイン |
+| POST | `/api/auth/google` | 不要 | 全員 | 実装あり | Google `idToken` 検証 |
+| POST | `/api/analyze` | JWT | 全員 | 暫定実装 | ダミー JSON を返却 |
+| GET | `/api/users/me` | JWT | Parent / Child | 実装あり | 最新ユーザー状態取得 |
+| GET | `/api/users/invite-code` | JWT | Parent | 実装あり | 招待コード取得 |
+| POST | `/api/users/join-family` | JWT | Child | 実装あり | 招待コードで家族参加 |
+| POST | `/api/users/consume-points` | JWT | Child | 実装あり | ポイント消費 |
+| PUT | `/api/users/profile` | JWT | Parent / Child | 実装あり | プロフィール更新 |
+| GET | `/api/quests` | JWT | Parent / Child | 実装あり | 家族のクエスト一覧 |
+| POST | `/api/quests/submit` | JWT | Child | 実装あり | Gemini 分析 + DB 保存 |
+| POST | `/api/quests/:id/bonus` | JWT | Parent | 実装あり | 追加ボーナス付与 |
+| GET | `/api/family/settings` | JWT | Parent | 実装あり | 家族設定取得 |
+| PUT | `/api/family/settings` | JWT | Parent | 実装あり | `minutesPerPoint` 更新 |
+| GET | `/api/family/game-status` | JWT | Parent | 実装あり | 残り時間取得 |
+| POST | `/api/family/lock` | JWT | Parent | 実装あり | 強制ロック切替 |
+| POST | `/api/family/extend-time` | JWT | Parent | 実装あり | 時間延長 |
+| GET | `/api/family/settings/ai` | JWT | Parent | 実装あり | AI 設定取得 |
+| PATCH | `/api/family/settings/ai` | JWT | Parent | 実装あり | AI 設定部分更新 |
+| GET | `/api/family/devices` | JWT | Parent | 実装あり | 実デバイス一覧取得 |
+| POST | `/api/family/devices` | JWT | Parent | 実装あり | デバイス追加 |
+| DELETE | `/api/family/devices/:id` | JWT | Parent | 実装あり | デバイス削除 |
+
+## 6. API 詳細
+
+### 6.1 ヘルスチェック
 
 #### GET `/api/health`
 
 - 用途: サーバー稼働確認
 - 認証: 不要
-- レスポンス例:
 
 ```json
 {
@@ -200,18 +170,18 @@ PW: Quest2404
 }
 ```
 
-### 4.2 認証・開発用 API
+### 6.2 開発用ログイン
 
 #### GET `/api/test/login/:role`
 
 - 用途: 開発用ダミーログイン
 - 認証: Basic 認証必須
 - Path Parameter:
-  - `role`: `child` または `parent`
-- 備考:
-  - `parent` のときは `PARENT`
-  - それ以外は `CHILD`
-- レスポンス例:
+  - `role`: `parent` のとき `PARENT`、それ以外は `CHILD`
+- 動作:
+  - Family が 1 件も無ければ作成
+  - 指定ロールのユーザーが無ければ作成
+  - 24 時間有効の JWT を返却
 
 ```json
 {
@@ -221,15 +191,12 @@ PW: Quest2404
     "id": "user_id",
     "name": "テスト生徒",
     "role": "CHILD",
-    "familyId": "family_id",
-    "level": 1,
-    "exp": 0,
-    "currentPoints": 0,
-    "grade": null,
-    "specialty": null
+    "familyId": "family_id"
   }
 }
 ```
+
+### 6.3 認証
 
 #### POST `/api/auth/google`
 
@@ -244,7 +211,10 @@ PW: Quest2404
 }
 ```
 
-- レスポンス例:
+- 備考:
+  - `idToken` は必須
+  - 新規ユーザー時のみ `role` が利用されます
+  - 新規ユーザー時は Family も自動作成されます
 
 ```json
 {
@@ -261,20 +231,21 @@ PW: Quest2404
 }
 ```
 
-### 4.3 Analyze API
+### 6.4 Analyze API
 
 #### POST `/api/analyze`
 
-- 用途: Before / After 画像の AI 分析
+- 用途: Before / After 画像の AI 分析用エンドポイント
 - 認証: JWT 必須
 - Content-Type: `multipart/form-data`
 - Body:
   - `beforeImage`: File
   - `afterImage`: File
   - `metadata`: JSON 文字列 任意
-- レスポンス:
-  - `success` ラッパーなし
-  - 現在の `app.ts` 実装は暫定ダミー JSON を返却
+- 現状:
+  - `app.ts` にダミーレスポンスが直書きされています
+  - 実 DB 更新は行いません
+  - アプリの実運用ロジックとしては `POST /api/quests/submit` を使う方が現実的です
 
 ```json
 {
@@ -294,14 +265,101 @@ PW: Quest2404
 }
 ```
 
-### 4.4 Users API
+### 6.5 Users API
 
 以下はすべて JWT 必須です。
+
+#### GET `/api/users/me`
+
+- 用途: アプリ起動時 / バックグラウンド復帰時の最新ユーザー状態同期
+- 権限: Parent / Child
+- 用途上の推奨:
+  - ローカルストレージの古い `level`, `exp`, `currentPoints` を信頼しない
+  - 初期表示前にこの API で再同期する
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "user_id",
+    "name": "たろう",
+    "role": "CHILD",
+    "level": 3,
+    "exp": 245,
+    "currentPoints": 18,
+    "grade": "小3",
+    "specialty": "算数",
+    "avatarUrl": "https://...",
+    "familyId": "family_id"
+  }
+}
+```
+
+#### GET `/api/users/invite-code`
+
+- 用途: 親が家族招待コードを取得
+- 権限: Parent のみ
+
+```json
+{
+  "success": true,
+  "inviteCode": "a1b2c3"
+}
+```
+
+#### POST `/api/users/join-family`
+
+- 用途: 子供が招待コードで家族に参加
+- 権限: Child のみ
+- Body:
+
+```json
+{
+  "inviteCode": "a1b2c3"
+}
+```
+
+- 備考:
+  - 現実装では、既存の `familyId` があっても上書き更新されます
+
+```json
+{
+  "success": true,
+  "message": "テスト用ファミリー に参加しました！",
+  "data": {
+    "id": "user_id",
+    "familyId": "family_id"
+  }
+}
+```
+
+#### POST `/api/users/consume-points`
+
+- 用途: 子供がポイントを消費
+- 権限: Child のみ
+- Body:
+
+```json
+{
+  "consumePoints": 15
+}
+```
+
+- レスポンス:
+
+```json
+{
+  "success": true,
+  "remainingPoints": 25,
+  "remainingMinutes": 50,
+  "minutesPerPoint": 2
+}
+```
 
 #### PUT `/api/users/profile`
 
 - 用途: プロフィール更新
-- 権限: Child / Parent
+- 権限: Parent / Child
 - Body:
 
 ```json
@@ -314,7 +372,6 @@ PW: Quest2404
 ```
 
 - すべて任意項目です
-- レスポンス例:
 
 ```json
 {
@@ -330,84 +387,71 @@ PW: Quest2404
 }
 ```
 
-#### GET `/api/users/invite-code`
-
-- 用途: 招待コード取得
-- 権限: Parent のみ
-- レスポンス例:
-
-```json
-{
-  "success": true,
-  "inviteCode": "a1b2c3"
-}
-```
-
-#### POST `/api/users/join-family`
-
-- 用途: 招待コードで家族連携
-- 権限: Child のみ
-- Body:
-
-```json
-{
-  "inviteCode": "a1b2c3"
-}
-```
-
-- レスポンス例:
-
-```json
-{
-  "success": true,
-  "message": "テスト用ファミリー に参加しました！",
-  "data": {
-    "id": "user_id",
-    "familyId": "family_id"
-  }
-}
-```
-
-#### POST `/api/users/consume-points`
-
-- 用途: ポイント消費
-- 権限: Child のみ
-- Body:
-
-```json
-{
-  "consumePoints": 15
-}
-```
-
-- レスポンス例:
-
-```json
-{
-  "success": true,
-  "remainingPoints": 25,
-  "remainingMinutes": 50,
-  "minutesPerPoint": 2
-}
-```
-
-### 4.5 Quests API
+### 6.6 Quests API
 
 以下はすべて JWT 必須です。
 
+#### GET `/api/quests`
+
+- 用途: JWT 内の `familyId` に属するクエスト一覧取得
+- 権限: Parent / Child
+- 並び順: `createdAt desc`
+- 返却項目:
+  - `id`
+  - `familyId`
+  - `status`
+  - `earnedPoints`
+  - `createdAt`
+  - `beforeImageUrl`
+  - `afterImageUrl`
+  - `subject`
+  - `topic`
+  - `aiResult`
+  - `child.name`
+  - `child.avatarUrl`
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "quest_id",
+      "familyId": "family_id",
+      "status": "COMPLETED",
+      "earnedPoints": 16,
+      "createdAt": "2026-03-06T00:00:00.000Z",
+      "beforeImageUrl": "uploads/before.jpg",
+      "afterImageUrl": "uploads/after.jpg",
+      "subject": "算数",
+      "topic": "分数",
+      "aiResult": {
+        "feedback_to_parent": "親へのメッセージ"
+      },
+      "child": {
+        "name": "テスト生徒",
+        "avatarUrl": null
+      }
+    }
+  ]
+}
+```
+
 #### POST `/api/quests/submit`
 
-- 用途: クエスト提出、Gemini 分析、ポイントと EXP 付与
+- 用途: クエスト提出、Gemini 分析、ポイント / EXP / レベル更新
 - 権限: Child のみ
 - Content-Type: `multipart/form-data`
 - Body:
-  - `beforeImage`: File
-  - `afterImage`: File
+  - `beforeImage`: File 必須
+  - `afterImage`: File 必須
   - `subject`: String 任意
   - `topic`: String 任意
+  - `userName`: String 任意
 - 備考:
-  - `childId` と `familyId` は送らず、JWT から取得します
-- レスポンス例:
+  - `childId` と `familyId` は body ではなく JWT から取得
+  - `earnedPoints = floor(total_score / 5)`
+  - `earnedMinutes = earnedPoints * minutesPerPoint`
+  - `newLevel = floor(newExp / 100) + 1`
 
 ```json
 {
@@ -442,7 +486,7 @@ PW: Quest2404
 
 #### POST `/api/quests/:id/bonus`
 
-- 用途: 親が追加ボーナスを付与
+- 用途: 親が家族内クエストへ追加ボーナスを付与
 - 権限: Parent のみ
 - Body:
 
@@ -452,7 +496,9 @@ PW: Quest2404
 }
 ```
 
-- レスポンス例:
+- 備考:
+  - `quest.familyId !== JWT.familyId` の場合は `403`
+  - 実装上、負数チェックは入っていません
 
 ```json
 {
@@ -466,54 +512,15 @@ PW: Quest2404
 }
 ```
 
-#### GET `/api/quests`
+### 6.7 Family API
 
-- 用途: 家族のクエスト一覧取得
-- 権限: Child / Parent
-- 備考:
-  - 実装済みなのは一覧 API のみで、`GET /api/quests/:id` は未公開です。
-  - `topic` は現在の一覧レスポンスに含まれません。
-  - `aiResult` は JSON を丸ごと返すため、`feedback_to_parent` は内部キーのスネークケースのまま返ります。
-  - コントローラーは `createdAt` を返す前提ですが、現リポジトリの生成済み Prisma Client とは不整合があります。
-- レスポンス例:
-
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "quest_id",
-      "familyId": "family_id",
-      "status": "COMPLETED",
-      "earnedPoints": 16,
-      "createdAt": "2026-03-06T00:00:00.000Z",
-      "beforeImageUrl": "uploads/before.jpg",
-      "afterImageUrl": "uploads/after.jpg",
-      "subject": "算数",
-      "aiResult": {
-        "feedback_to_parent": "親へのメッセージ"
-      },
-      "child": {
-        "name": "テスト生徒",
-        "avatarUrl": null
-      }
-    }
-  ]
-}
-```
-
-### 4.6 Family API
-
-以下はすべて JWT 必須です。
-
-フロントエンド要望にあった `/:familyId/...` や `/api/settings/ai` 直下の URL は公開されていません。  
-現実装で公開されているのは、以下の `/api/family/...` ルートです。
+以下はすべて JWT 必須かつ Parent 専用です。  
+`familyId` は URL パラメータではなく JWT から取得します。
 
 #### GET `/api/family/settings`
 
-- 用途: 家族設定の取得
-- 権限: Parent のみ
-- レスポンス例:
+- 用途: 家族設定取得
+- レスポンス:
 
 ```json
 {
@@ -526,8 +533,7 @@ PW: Quest2404
 
 #### PUT `/api/family/settings`
 
-- 用途: 1ポイントあたりの分数設定を更新
-- 権限: Parent のみ
+- 用途: `minutesPerPoint` 更新
 - Body:
 
 ```json
@@ -537,8 +543,7 @@ PW: Quest2404
 ```
 
 - バリデーション:
-  - 1〜60 の整数
-- レスポンス例:
+  - 1 以上 60 以下の整数
 
 ```json
 {
@@ -550,28 +555,25 @@ PW: Quest2404
 
 #### GET `/api/family/game-status`
 
-- 用途: 家族内の子供ポイント合計から残りゲーム時間を取得
-- 権限: Parent のみ
-- 備考:
-  - 要望にあった `GET /api/family/:familyId/game-status` ではなく、この URL が実装されています。
-  - `familyId` は URL パラメータではなく JWT から取得します。
-- レスポンス例:
+- 用途: 家族内の子供ポイント合計から残り時間を算出
+- 現実装:
+  - `gameRemainingMinutes = 子供全員の currentPoints 合計 * minutesPerPoint`
+  - `smartphoneRemainingMinutes` は同値
+  - `childName` は先頭の子供名、いなければ `"お子様"`
 
 ```json
 {
   "success": true,
   "gameRemainingMinutes": 80,
   "smartphoneRemainingMinutes": 80,
-  "isForceLocked": false
+  "isForceLocked": false,
+  "childName": "テスト生徒"
 }
 ```
 
 #### POST `/api/family/lock`
 
 - 用途: 強制ロック / 解除
-- 権限: Parent のみ
-- 備考:
-  - 要望にあった `POST /api/family/:familyId/lock` ではなく、この URL が実装されています。
 - Body:
 
 ```json
@@ -580,8 +582,6 @@ PW: Quest2404
 }
 ```
 
-- レスポンス例:
-
 ```json
 {
   "success": true,
@@ -589,13 +589,34 @@ PW: Quest2404
 }
 ```
 
+#### POST `/api/family/extend-time`
+
+- 用途: 家族内の子供全員へポイント加算して残り時間を延長
+- Body:
+
+```json
+{
+  "minutes": 30
+}
+```
+
+- 現実装:
+  - `pointsToAdd = ceil(minutes / minutesPerPoint)`
+  - 家族内の全 CHILD に同じポイントを付与
+
+```json
+{
+  "success": true,
+  "newGameRemainingMinutes": 110,
+  "newSmartphoneRemainingMinutes": 110
+}
+```
+
 #### GET `/api/family/settings/ai`
 
 - 用途: AI 設定取得
-- 権限: Parent のみ
 - 備考:
-  - 要望にあった `GET /api/settings/ai` は未公開で、実装済みなのはこの URL です。
-- レスポンス例:
+  - DB に未設定ならデフォルト値を返します
 
 ```json
 {
@@ -615,9 +636,6 @@ PW: Quest2404
 #### PATCH `/api/family/settings/ai`
 
 - 用途: AI 設定部分更新
-- 権限: Parent のみ
-- 備考:
-  - 要望にあった `PATCH /api/settings/ai` は未公開で、実装済みなのはこの URL です。
 - Body 例:
 
 ```json
@@ -629,7 +647,9 @@ PW: Quest2404
 }
 ```
 
-- レスポンス例:
+- 現実装:
+  - トップレベルは浅いマージ
+  - `ng` だけはネストマージ
 
 ```json
 {
@@ -648,11 +668,8 @@ PW: Quest2404
 
 #### GET `/api/family/devices`
 
-- 用途: デバイス一覧取得
-- 権限: Parent のみ
-- 備考:
-  - 要望にあった `GET /api/family/:familyId/devices` ではなく、この URL が実装されています。
-- レスポンス例:
+- 用途: 家族に紐づく実デバイス一覧取得
+- モック配列の代替として使うべき API
 
 ```json
 {
@@ -660,39 +677,81 @@ PW: Quest2404
   "data": [
     {
       "id": "device_id",
-      "name": "Quest Gate"
+      "name": "Nintendo Switch"
     }
   ]
 }
 ```
 
-## 5. v2.0 からの変更点
+#### POST `/api/family/devices`
 
-- `/api/analyze` は無認証ではなく、JWT 必須になりました。
-- `/api/analyze` は現時点でダミー JSON を返す暫定実装です。
-- `/api/test/login/:role` は Basic 認証必須になりました。
-- `/api/users/join-family` と `/api/users/consume-points` は Child 限定ガードが追加されました。
-- `/api/users/consume-points` のリクエストボディは `minutes` ではなく `consumePoints` です。
-- `/api/quests/submit` は `childId` / `familyId` を body で受け取らず、JWT から取得します。
-- `/api/quests/submit` の報酬仕様が変わり、`earnedPoints`, `earnedMinutes`, `currentPoints`, `currentMinutes`, `minutesPerPoint` を返します。
-- `/api/quests/:id/bonus` は同一家族チェックを行い、レスポンスも `data` 返却ではなくポイント / 分数情報返却に変わりました。
-- `GET /api/quests` は `createdAt`, 画像 URL, `subject`, `aiResult`, `child` 情報を含む一覧返却に変わりました。
-- `family` 系 API が追加されました。
+- 用途: デバイス追加
+- 権限: Parent のみ
+- Body:
 
-## 6. フロントエンド実装上の注意
+```json
+{
+  "name": "Nintendo Switch"
+}
+```
 
-- 現在の `frontend/src/lib/gemini.ts` は `/api/analyze` 呼び出し時に JWT を付けていません。v3.1 のバックエンド仕様に合わせるには `Authorization` ヘッダー追加が必要です。
-- `backend/src/public/test.html` は `quests/submit` に `childId` と `familyId` をまだ送っていますが、バックエンド側では現在それらを参照していません。
-- `consume-points` を呼ぶクライアントは、`minutes` ではなく `consumePoints` を送ってください。
-- `family/settings` の `minutesPerPoint` は 1〜60 の整数制約があります。
-- `family` 系の実装済み URL は `/:familyId/...` ではなく、JWT の `familyId` を使う `/api/family/...` 形式です。
-- `GET /api/quests` では `topic` は返らず、個別取得用の `GET /api/quests/:id` も未実装です。
-- `PATCH /api/family/settings/ai` は Express ルーター上は存在しますが、`app.ts` の CORS `methods` に `PATCH` が含まれていないため、別オリジンのブラウザ実行では preflight 失敗の可能性があります。
-- 現在のリポジトリでは Prisma schema とコントローラーの不整合により `npm run build` が失敗します。動作確認前に schema / migration / `prisma generate` の同期が必要です。
+- 備考:
+  - DB に `familyId` 付きで作成されます
+  - 現実装は重複チェックなしです
 
-## 7. 未公開 / 未実装 API
+```json
+{
+  "success": true,
+  "data": {
+    "id": "device_id",
+    "name": "Nintendo Switch",
+    "familyId": "family_id"
+  }
+}
+```
 
-旧設計書またはフロントエンド要望にあった以下の API / URL は、現リポジトリでは未実装です。
+#### DELETE `/api/family/devices/:id`
+
+- 用途: デバイス削除
+- 権限: Parent のみ
+- 備考:
+  - 自分の family に属するデバイスだけ削除可能
+
+```json
+{
+  "success": true,
+  "message": "デバイスを削除しました。"
+}
+```
+
+## 7. フロントエンド実装上の推奨
+
+- アプリ起動時とバックグラウンド復帰時に `GET /api/users/me` を呼び、`level`, `exp`, `currentPoints` を再同期してください。
+- デバイス一覧の固定値は廃止し、`GET /api/family/devices` を表示元にしてください。
+- デバイス追加 / 削除は `POST /api/family/devices` と `DELETE /api/family/devices/:id` に統一してください。
+- `family` 系 API は `/:familyId/...` ではなく、JWT の `familyId` を前提とする `/api/family/...` を使用してください。
+- `POST /api/quests/submit` では `childId` / `familyId` を body に入れないでください。
+- `POST /api/users/consume-points` の body 名は `minutes` ではなく `consumePoints` です。
+- `PATCH /api/family/settings/ai` をブラウザから直接使う場合は CORS 設定の修正が必要です。
+- `/api/analyze` はまだ固定レスポンスです。実運用の学習提出フローでは `POST /api/quests/submit` を優先してください。
+
+## 8. 既知の不整合と注意点
+
+- `backend/src/prisma/schema.prisma` と生成済み Prisma Client が同期していません。
+- 2026-03-08 時点の `npm run build` では以下が原因で失敗します。
+  - `Family.minutesPerPoint`
+  - `Family.isForceLocked`
+  - `Family.aiSettings`
+  - `Device` モデル
+  - `Quest.createdAt`
+- ソース上では新 API 群は実装済みですが、ローカルリポジトリでビルドを通すには Prisma Client の再生成が必要です。
+- `POST /api/family/extend-time` のエラーメッセージは「正の整数」と言っていますが、実コード上は整数チェックまではしていません。
+- `POST /api/quests/:id/bonus` は `bonusPoints` が負数でも通る実装になっています。
+- `POST /api/family/devices` は空文字以外の文字列なら保存でき、トリムや重複チェックはありません。
+
+## 9. 未公開 / 未実装 / パス変更あり
+
+以下は旧設計書やフロント要望に存在したものの、現行 `backend/src` では公開されていません。
 
 - `POST /api/user/parent/signup`
 - `POST /api/family/child`
@@ -703,16 +762,26 @@ PW: Quest2404
 - `GET /api/quest/:id`
 - `GET /api/quest/list`
 - `GET /api/quests/:id`
-- `GET /api/family/:familyId/game-status` は未公開で、実装済みなのは `GET /api/family/game-status`
-- `POST /api/family/:familyId/lock` は未公開で、実装済みなのは `POST /api/family/lock`
-- `POST /api/family/:familyId/extend-time` は未公開で、実装済みなのは `POST /api/family/extend-time`
-- `GET /api/settings/ai` は未公開で、実装済みなのは `GET /api/family/settings/ai`
-- `PATCH /api/settings/ai` は未公開で、実装済みなのは `PATCH /api/family/settings/ai`
-- `GET /api/family/:familyId/devices` は未公開で、実装済みなのは `GET /api/family/devices`
-- `POST /api/family/settings` は未実装で、実装済みなのは `PUT /api/family/settings`
 - `POST /api/quest/approve`
 - `POST /api/quest/reject`
 - `POST /api/quest/correct`
 - `GET /api/energy/balance`
 - `POST /api/device/unlock`
 - `POST /api/device/status`
+
+パス変更あり:
+
+- `GET /api/family/:familyId/game-status`
+  - 実装済みなのは `GET /api/family/game-status`
+- `POST /api/family/:familyId/lock`
+  - 実装済みなのは `POST /api/family/lock`
+- `POST /api/family/:familyId/extend-time`
+  - 実装済みなのは `POST /api/family/extend-time`
+- `GET /api/settings/ai`
+  - 実装済みなのは `GET /api/family/settings/ai`
+- `PATCH /api/settings/ai`
+  - 実装済みなのは `PATCH /api/family/settings/ai`
+- `GET /api/family/:familyId/devices`
+  - 実装済みなのは `GET /api/family/devices`
+- `POST /api/family/settings`
+  - 実装済みなのは `PUT /api/family/settings`
