@@ -29,7 +29,7 @@ const upload = multer({ dest: 'uploads/' });
 // ミドルウェアの設定
 app.use(cors({
     origin: '*', 
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());

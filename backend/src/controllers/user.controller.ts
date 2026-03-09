@@ -129,23 +129,32 @@ export const getMe = async (req: Request, res: Response) => {
         const userId = req.user.userId;
         const user = await prisma.user.findUnique({
             where: { id: userId },
-            select: {
-                id: true,
-                name: true,
-                role: true,
-                level: true,
-                exp: true,
-                currentPoints: true,
-                grade: true,
-                specialty: true,
-                avatarUrl: true,
-                familyId: true
-            }
+            include: { family: true } // 【修正】家族情報を一緒に取得
         });
 
         if (!user) return res.status(404).json({ error: 'ユーザーが見つかりません。' });
         
-        return res.status(200).json({ success: true, data: user });
+        // 【修正】BE-1対応: currentMinutes を計算して返却
+        const minutesPerPoint = user.family?.minutesPerPoint || 2;
+        const currentMinutes = user.currentPoints * minutesPerPoint;
+
+        return res.status(200).json({ 
+            success: true, 
+            data: {
+                id: user.id,
+                name: user.name,
+                role: user.role,
+                level: user.level,
+                exp: user.exp,
+                currentPoints: user.currentPoints,
+                currentMinutes, // 追加: これでフロントエンドは計算不要
+                minutesPerPoint, // 追加: 念のためレートも返す
+                grade: user.grade,
+                specialty: user.specialty,
+                avatarUrl: user.avatarUrl,
+                familyId: user.familyId
+            } 
+        });
     } catch (error) {
         console.error('ユーザー情報取得エラー:', error);
         return res.status(500).json({ error: 'サーバーエラーが発生しました。' });

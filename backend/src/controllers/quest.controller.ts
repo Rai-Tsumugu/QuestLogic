@@ -55,7 +55,7 @@ export const addBonus = async (req: Request, res: Response) => {
         const { bonusPoints } = req.body;
         const parentFamilyId = req.user.familyId;
 
-        if (!bonusPoints || typeof bonusPoints !== 'number') {
+        if (!bonusPoints || typeof bonusPoints !== 'number' || bonusPoints <= 0) {
             return res.status(400).json({ error: 'ボーナスポイントを正しく指定してください。' });
         }
 
