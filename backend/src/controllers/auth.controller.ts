@@ -4,28 +4,22 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../app';
 
 // Google OAuthクライアントの初期化
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const client = new OAuth2Client(process.env.GOOGLE_WEB_CLIENT_ID);
 
 /**
  * ------------------------------------------------------------------
  * Googleログイン処理 (Google Login & Registration)
  * @route POST /api/auth/google
- * @description
- * フロントエンドから受け取ったGoogleのidTokenを検証し、
- * DBにユーザーが存在しなければ新規作成、存在すれば取得します。
- * その後、QuestLogic専用のJWTアクセストークンを発行します。
  * ------------------------------------------------------------------
  */
 export const googleLogin = async (req: Request, res: Response) => {
     try {
-        // フロントエンド(またはPostman)から送信されるidTokenと役割(role)を取得
         const { idToken, role } = req.body;
 
         if (!idToken) {
             return res.status(400).json({ error: 'idTokenが必須です。' });
         }
 
-        // 1. Googleサーバーでトークンを検証
         const ticket = await client.verifyIdToken({
             idToken: idToken,
             audience: [
@@ -44,32 +38,36 @@ export const googleLogin = async (req: Request, res: Response) => {
 
         const { email, sub: googleId, name, picture } = payload;
 
-        // 2. データベースでユーザーを検索
         let user = await prisma.user.findUnique({
             where: { email: email },
         });
 
         // 3. ユーザーが存在しない場合（新規登録）
         if (!user) {
-            // ※ デモ用として、自動的にダミーの「家族(Family)」を作成して紐付けます。
-            // 実際の運用では「家族招待コード」などのロジックが必要です。
-            const family = await prisma.family.create({
-                data: { name: `${name}家のQuest` }
-            });
+            let newFamilyId = null;
+
+            // 【修正】親(PARENT)として登録する場合は、自身の家族(Family)グループを自動作成する
+            if (role === 'PARENT') {
+                const familyName = name ? `${name}家のQuest` : '新しい家族のQuest';
+                const family = await prisma.family.create({
+                    data: { name: familyName }
+                });
+                newFamilyId = family.id; // 作成した家族のIDを取得
+            }
+            // ※ 子供(CHILD)の場合は familyId は null のまま（後で招待コードを使って参加する）
 
             user = await prisma.user.create({
                 data: {
                     email: email,
                     googleId: googleId,
                     name: name || '名無し',
-                    role: role || 'CHILD', // リクエストにroleがない場合は子供として登録
+                    role: role || 'CHILD',
                     avatarUrl: picture,
-                    familyId: family.id
+                    familyId: newFamilyId // PARENTならIDが入り、CHILDならnullになる
                 },
             });
         }
 
-        // 4. QuestLogic用のJWTを生成 (有効期限: 24時間)
         const jwtSecret = process.env.JWT_SECRET || 'fallback_secret';
         const accessToken = jwt.sign(
             { 
@@ -81,7 +79,6 @@ export const googleLogin = async (req: Request, res: Response) => {
             { expiresIn: '24h' }
         );
 
-        // 5. 結果をレスポンスとして返す
         return res.status(200).json({
             success: true,
             message: 'ログインに成功しました。',
@@ -98,5 +95,55 @@ export const googleLogin = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('認証エラー:', error);
         return res.status(500).json({ error: 'サーバー内部エラーが発生しました。' });
+    }
+};
+
+/**
+ * ------------------------------------------------------------------
+ * 開発用テストログイン機能 (Test Login)
+ * @route GET /api/test/login/:role
+ * ------------------------------------------------------------------
+ */
+// 【新規】BE-7対応: URLパラメーターからロールを判別し、適切なユーザーを返す
+export const testLogin = async (req: Request, res: Response) => {
+    try {
+        const requestedRole = req.params.role?.toUpperCase();
+        
+        if (requestedRole !== 'PARENT' && requestedRole !== 'CHILD') {
+            return res.status(400).json({ error: '無効なロールです。PARENTまたはCHILDを指定してください。' });
+        }
+
+        // 該当ロールのテストユーザーを検索
+        let testUser = await prisma.user.findFirst({
+            where: { role: requestedRole as 'PARENT' | 'CHILD', email: { contains: 'test' } }
+        });
+
+        // 存在しない場合は新規作成
+        if (!testUser) {
+            testUser = await prisma.user.create({
+                data: {
+                    email: `test_${requestedRole.toLowerCase()}@example.com`,
+                    name: `テスト${requestedRole}`,
+                    role: requestedRole as 'PARENT' | 'CHILD',
+                }
+            });
+        }
+
+        const jwtSecret = process.env.JWT_SECRET || 'fallback_secret';
+        const token = jwt.sign(
+            { userId: testUser.id, role: testUser.role, familyId: testUser.familyId },
+            jwtSecret,
+            { expiresIn: '24h' }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: `${requestedRole}テストユーザーでログインしました。`,
+            token,
+            user: testUser
+        });
+    } catch (error) {
+        console.error('テストログインエラー:', error);
+        return res.status(500).json({ error: 'サーバーエラーが発生しました。' });
     }
 };
