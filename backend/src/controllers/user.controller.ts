@@ -4,26 +4,41 @@ import { prisma } from '../app';
 // 家族連携 (子供専用)
 export const joinFamily = async (req: Request, res: Response) => {
     try {
+        const userId = req.user.userId;
         const { inviteCode } = req.body;
-        const userId = req.user.userId; // JWTから安全に取得
 
-        if (!inviteCode) return res.status(400).json({ error: '招待コードが必要です。' });
+        if (!inviteCode) {
+            return res.status(400).json({ error: '招待コードが必要です。' });
+        }
 
-        const family = await prisma.family.findFirst({ where: { inviteCode } });
-        if (!family) return res.status(404).json({ error: '無効な招待コードです。' });
+        // 【追加】防衛的実装 (案A): 既にfamilyIdを持っているかチェック
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) {
+            return res.status(404).json({ error: 'ユーザーが見つかりません。' });
+        }
+        if (user.familyId) {
+            return res.status(400).json({ error: '既にファミリーに参加済みです。' }); // すでに参加済みの場合はエラー
+        }
+
+        const family = await prisma.family.findUnique({ where: { inviteCode } });
+        if (!family) {
+            return res.status(404).json({ error: '無効な招待コードです。' });
+        }
 
         const updatedUser = await prisma.user.update({
             where: { id: userId },
             data: { familyId: family.id }
         });
 
-        return res.status(200).json({
-            success: true,
-            message: `${family.name} に参加しました！`,
-            data: { id: updatedUser.id, familyId: updatedUser.familyId }
+        // ※ 注意: JWTトークンの再発行ロジックがここにある場合は維持してください
+        
+        return res.status(200).json({ 
+            success: true, 
+            message: '家族に参加しました。', 
+            data: { familyId: updatedUser.familyId } 
         });
     } catch (error) {
-        console.error('家族連携エラー:', error);
+        console.error('家族参加エラー:', error);
         return res.status(500).json({ error: 'サーバーエラーが発生しました。' });
     }
 };

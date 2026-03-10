@@ -28,7 +28,13 @@ export const googleLogin = async (req: Request, res: Response) => {
         // 1. Googleサーバーでトークンを検証
         const ticket = await client.verifyIdToken({
             idToken: idToken,
-            audience: process.env.GOOGLE_CLIENT_ID,
+            audience: [
+                process.env.GOOGLE_WEB_CLIENT_ID,
+                process.env.GOOGLE_PARENT_IOS_CLIENT_ID,
+                process.env.GOOGLE_PARENT_ANDROID_CLIENT_ID,
+                process.env.GOOGLE_CHILD_IOS_CLIENT_ID,
+                process.env.GOOGLE_CHILD_ANDROID_CLIENT_ID
+            ].filter(Boolean) as string[],
         });
 
         const payload = ticket.getPayload();
