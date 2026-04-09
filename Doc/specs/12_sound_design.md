@@ -23,5 +23,5 @@
     *   **イメージ**:
     *   **目的**:
 
-## 2. 実装方針 (Expo AV / Haptics)
-*   `expo-av`: 音声再生管理。サウンド設定（ON/OFF）をGlobal Stateで持つ。
+## 2. 実装方針 (調整中)
+*   `Sound_Manager`: 音声再生管理。サウンド設定（ON/OFF）をGlobal Stateで持つ。
