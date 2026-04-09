@@ -44,10 +44,3 @@
 #### 2.2 データ不整合
 *   **Message**: "Data Sync Failed"
 *   **Action**: [Reload Data]
-
-## 3. 却下時のUI (Rejection)
-親にクエストを却下された時の子供への表示。
-*   **Title**: 「クエスト失敗…」
-*   **Effect**: 画面が少し暗くなり、悲しい音が鳴る。
-*   **Message**: 「やり直し命令が出たぞ！ 親方のコメント: 『字をもっと丁寧に！』」
-*   **Action**: [再挑戦する (Re-Quest)]
